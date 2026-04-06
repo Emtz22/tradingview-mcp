@@ -15,7 +15,7 @@ export async function start({ date } = {}) {
   await evaluate(`${rp}.showReplayToolbar()`);
   await new Promise(r => setTimeout(r, 500));
 
-  if (date) await evaluate(`${rp}.selectDate(new Date('${date}'))`);
+  if (date) await evaluate(`${rp}.selectDate(new Date(${JSON.stringify(date)}))`);
   else await evaluate(`${rp}.selectFirstAvailableDate()`);
   await new Promise(r => setTimeout(r, 1000));
 
@@ -56,7 +56,7 @@ export async function autoplay({ speed } = {}) {
   const rp = await getReplayApi();
   const started = await evaluate(wv(`${rp}.isReplayStarted()`));
   if (!started) throw new Error('Replay is not started. Use replay_start first.');
-  if (speed > 0) await evaluate(`${rp}.changeAutoplayDelay(${speed})`);
+  if (speed !== undefined && speed !== null) await evaluate(`${rp}.changeAutoplayDelay(${speed})`);
   await evaluate(`${rp}.toggleAutoplay()`);
   const isAutoplay = await evaluate(wv(`${rp}.isAutoplayStarted()`));
   const currentDelay = await evaluate(wv(`${rp}.autoplayDelay()`));
@@ -72,8 +72,24 @@ export async function stop() {
     return { success: true, action: 'already_stopped' };
   }
   await evaluate(`${rp}.stopReplay()`);
+  // Handle "Leave replay?" confirmation dialog (appears when trades were placed)
+  await new Promise(r => setTimeout(r, 500));
+  const dismissed = await evaluate(`
+    (function() {
+      var btns = document.querySelectorAll('button');
+      for (var i = 0; i < btns.length; i++) {
+        var text = btns[i].textContent.trim();
+        if (/^leave$/i.test(text) || /^yes$/i.test(text) || /^confirm$/i.test(text) || /^ok$/i.test(text)) {
+          var parent = btns[i].closest('[role="dialog"], [class*="dialog"], [class*="modal"], [class*="popup"]');
+          if (parent) { btns[i].click(); return text; }
+        }
+      }
+      return null;
+    })()
+  `);
+  if (dismissed) await new Promise(r => setTimeout(r, 500));
   try { await evaluate(`${rp}.hideReplayToolbar()`); } catch {}
-  return { success: true, action: 'replay_stopped' };
+  return { success: true, action: 'replay_stopped', dialog_dismissed: dismissed || false };
 }
 
 export async function trade({ action }) {

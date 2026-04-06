@@ -17,12 +17,11 @@ export async function getState() {
           return { id: s.id, name: s.name || s.title || 'unknown' };
         });
       } catch(e) {}
-      return {
-        symbol: chart.symbol(),
-        resolution: chart.resolution(),
-        chartType: chart.chartType(),
-        studies: studies,
-      };
+      var sym = 'unknown', res = 'unknown', ct = null;
+      try { sym = chart.symbol(); } catch(e) {}
+      try { res = chart.resolution(); } catch(e) {}
+      try { ct = chart.chartType(); } catch(e) {}
+      return { symbol: sym, resolution: res, chartType: ct, studies: studies };
     })()
   `);
   return { success: true, ...state };
@@ -33,12 +32,29 @@ export async function setSymbol({ symbol }) {
     (function() {
       var chart = ${CHART_API};
       return new Promise(function(resolve) {
-        chart.setSymbol('${symbol.replace(/'/g, "\\'")}', {});
+        chart.setSymbol(${JSON.stringify(symbol)}, {});
         setTimeout(resolve, 500);
       });
     })()
   `);
   const ready = await waitForChartReady(symbol);
+
+  // Check for "This symbol doesn't exist" broken state
+  if (!ready) {
+    const broken = await evaluate(`
+      (function() {
+        var els = document.querySelectorAll('[class*="invalidSymbol"], [class*="errorCard"]');
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].offsetParent !== null && /symbol doesn.t exist/i.test(els[i].textContent)) return true;
+        }
+        return false;
+      })()
+    `);
+    if (broken) {
+      return { success: true, symbol, chart_ready: false, warning: 'Chart is in broken state — close this tab and switch to another, or open a new tab.' };
+    }
+  }
+
   return { success: true, symbol, chart_ready: ready };
 }
 
@@ -46,7 +62,7 @@ export async function setTimeframe({ timeframe }) {
   await evaluate(`
     (function() {
       var chart = ${CHART_API};
-      chart.setResolution('${timeframe.replace(/'/g, "\\'")}', {});
+      chart.setResolution(${JSON.stringify(timeframe)}, {});
     })()
   `);
   const ready = await waitForChartReady(null, timeframe);
@@ -81,7 +97,7 @@ export async function manageIndicator({ action, indicator, entity_id, inputs: in
     await evaluate(`
       (function() {
         var chart = ${CHART_API};
-        chart.createStudy('${indicator.replace(/'/g, "\\'")}', false, false, ${JSON.stringify(inputArr)});
+        chart.createStudy(${JSON.stringify(indicator)}, false, false, ${JSON.stringify(inputArr)});
       })()
     `);
     await new Promise(r => setTimeout(r, 1500));
@@ -93,7 +109,7 @@ export async function manageIndicator({ action, indicator, entity_id, inputs: in
     await evaluate(`
       (function() {
         var chart = ${CHART_API};
-        chart.removeEntity('${entity_id.replace(/'/g, "\\'")}');
+        chart.removeEntity(${JSON.stringify(entity_id)});
       })()
     `);
     return { success: true, action: 'remove', entity_id };

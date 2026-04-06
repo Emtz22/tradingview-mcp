@@ -234,7 +234,8 @@ export async function launch({ port, kill_existing } = {}) {
         }).on('error', () => resolve(null));
       });
       if (ready) {
-        const info = JSON.parse(ready);
+        let info = {};
+        try { info = JSON.parse(ready); } catch { /* malformed CDP response — retry */ continue; }
         return {
           success: true, platform, binary: tvPath, pid: child.pid,
           cdp_port: cdpPort, cdp_url: `http://localhost:${cdpPort}`,

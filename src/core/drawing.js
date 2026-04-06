@@ -3,26 +3,44 @@
  */
 import { evaluate, getChartApi } from '../connection.js';
 
-export async function drawShape({ shape, point, point2, overrides: overridesRaw, text }) {
+export async function drawShape({ shape, point, point2, overrides: overridesRaw, text, sl, tp, account_size, risk_pct }) {
   const overrides = overridesRaw ? (typeof overridesRaw === 'string' ? JSON.parse(overridesRaw) : overridesRaw) : {};
   const apiPath = await getChartApi();
-  const overridesStr = JSON.stringify(overrides || {});
   const textStr = text ? JSON.stringify(text) : '""';
 
+  // For long_position / short_position, compute stopLevel and profitLevel from sl/tp prices
+  if ((shape === 'long_position' || shape === 'short_position') && point && (sl || tp)) {
+    const entry = point.price;
+    const mintick = await evaluate(`${apiPath}.symbolExt().minmov / ${apiPath}.symbolExt().pricescale`);
+    const mt = mintick || 0.001;
+    if (sl) overrides.stopLevel = Math.round(Math.abs(entry - sl) / mt);
+    if (tp) overrides.profitLevel = Math.round(Math.abs(tp - entry) / mt);
+    if (account_size) overrides.accountSize = account_size;
+    if (risk_pct) overrides.risk = risk_pct;
+    if (!overrides.riskDisplayMode) overrides.riskDisplayMode = 'money';
+    // Position drawings need 2 points at same price for width
+    if (!point2) {
+      const now = Math.floor(Date.now() / 1000);
+      point2 = { time: now, price: entry };
+      if (!point.time) point.time = now - 7200;
+    }
+  }
+
+  const overridesStr = JSON.stringify(overrides || {});
   const before = await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`);
 
   if (point2) {
     await evaluate(`
       ${apiPath}.createMultipointShape(
         [{ time: ${point.time}, price: ${point.price} }, { time: ${point2.time}, price: ${point2.price} }],
-        { shape: '${shape}', overrides: ${overridesStr}, text: ${textStr} }
+        { shape: ${JSON.stringify(shape)}, overrides: ${overridesStr}, text: ${textStr} }
       )
     `);
   } else {
     await evaluate(`
       ${apiPath}.createShape(
         { time: ${point.time}, price: ${point.price} },
-        { shape: '${shape}', overrides: ${overridesStr}, text: ${textStr} }
+        { shape: ${JSON.stringify(shape)}, overrides: ${overridesStr}, text: ${textStr} }
       )
     `);
   }
@@ -51,7 +69,7 @@ export async function getProperties({ entity_id }) {
   const result = await evaluate(`
     (function() {
       var api = ${apiPath};
-      var eid = '${entity_id}';
+      var eid = ${JSON.stringify(entity_id)};
       var props = { entity_id: eid };
       var shape = api.getShapeById(eid);
       if (!shape) return { error: 'Shape not found: ' + eid };
@@ -80,7 +98,7 @@ export async function removeOne({ entity_id }) {
   const result = await evaluate(`
     (function() {
       var api = ${apiPath};
-      var eid = '${entity_id}';
+      var eid = ${JSON.stringify(entity_id)};
       var before = api.getAllShapes();
       var found = false;
       for (var i = 0; i < before.length; i++) { if (before[i].id === eid) { found = true; break; } }

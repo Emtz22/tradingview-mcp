@@ -4,13 +4,17 @@ import * as core from '../core/drawing.js';
 
 export function registerDrawingTools(server) {
   server.tool('draw_shape', 'Draw a shape/line on the chart', {
-    shape: z.string().describe('Shape type: horizontal_line, vertical_line, trend_line, rectangle, text'),
-    point: z.object({ time: z.coerce.number(), price: z.coerce.number() }).describe('{ time: unix_timestamp, price: number }'),
-    point2: z.object({ time: z.coerce.number(), price: z.coerce.number() }).optional().describe('Second point for two-point shapes (trend_line, rectangle)'),
+    shape: z.string().describe('Shape type: horizontal_line, vertical_line, trend_line, rectangle, text, long_position, short_position'),
+    point: z.object({ time: z.coerce.number(), price: z.coerce.number() }).describe('{ time: unix_timestamp, price: number }. For position shapes, price = entry level.'),
+    point2: z.object({ time: z.coerce.number(), price: z.coerce.number() }).optional().describe('Second point for two-point shapes (trend_line, rectangle). Auto-generated for position shapes.'),
     overrides: z.string().optional().describe('JSON string of style overrides (e.g., \'{"linecolor": "#ff0000", "linewidth": 2}\')'),
     text: z.string().optional().describe('Text content for text shapes'),
-  }, async ({ shape, point, point2, overrides, text }) => {
-    try { return jsonResult(await core.drawShape({ shape, point, point2, overrides, text })); }
+    sl: z.coerce.number().optional().describe('Stop loss price (for long_position / short_position)'),
+    tp: z.coerce.number().optional().describe('Take profit price (for long_position / short_position)'),
+    account_size: z.coerce.number().optional().describe('Account size for position sizing (default from chart)'),
+    risk_pct: z.coerce.number().optional().describe('Risk % for position sizing'),
+  }, async ({ shape, point, point2, overrides, text, sl, tp, account_size, risk_pct }) => {
+    try { return jsonResult(await core.drawShape({ shape, point, point2, overrides, text, sl, tp, account_size, risk_pct })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 

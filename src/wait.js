@@ -46,7 +46,8 @@ export async function waitForChartReady(expectedSymbol = null, expectedTf = null
     }
 
     // Check symbol match if expected
-    if (expectedSymbol && state.currentSymbol && !state.currentSymbol.toUpperCase().includes(expectedSymbol.toUpperCase())) {
+    var expBase = expectedSymbol && expectedSymbol.indexOf(':') !== -1 ? expectedSymbol.split(':')[1] : expectedSymbol;
+    if (expBase && state.currentSymbol && !state.currentSymbol.toUpperCase().includes(expBase.toUpperCase())) {
       stableCount = 0;
       await new Promise(r => setTimeout(r, POLL_INTERVAL));
       continue;

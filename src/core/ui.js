@@ -44,12 +44,20 @@ export async function openPanel({ panel, action }) {
         if (panel === 'pine-editor') { var monacoEl = document.querySelector('.monaco-editor.pine-editor-monaco'); isOpen = isOpen && !!monacoEl; }
         if (panel === 'strategy-tester') { var stratPanel = document.querySelector('[data-name="backtesting"]') || document.querySelector('[class*="strategyReport"]'); isOpen = isOpen && !!(stratPanel && stratPanel.offsetParent); }
         var performed = 'none';
+        var internalName = panel === 'pine-editor' ? 'scripteditor' : widgetName;
         if (action === 'open' || (action === 'toggle' && !isOpen)) {
-          if (panel === 'pine-editor') { if (typeof bwb.activateScriptEditorTab === 'function') bwb.activateScriptEditorTab(); else if (typeof bwb.showWidget === 'function') bwb.showWidget(widgetName); }
-          else { if (typeof bwb.showWidget === 'function') bwb.showWidget(widgetName); }
+          if (typeof bwb.open === 'function') bwb.open(internalName);
+          else if (panel === 'pine-editor' && typeof bwb.activateScriptEditorTab === 'function') bwb.activateScriptEditorTab();
+          else if (typeof bwb.showWidget === 'function') bwb.showWidget(widgetName);
+          // Also click the Pine button as fallback for pine-editor
+          if (panel === 'pine-editor') {
+            var pineBtn = document.querySelector('[data-name="pine-dialog-button"]');
+            if (pineBtn) pineBtn.click();
+          }
           performed = 'opened';
         } else if (action === 'close' || (action === 'toggle' && isOpen)) {
-          if (typeof bwb.hideWidget === 'function') bwb.hideWidget(widgetName);
+          if (typeof bwb.close === 'function') bwb.close();
+          else if (typeof bwb.hideWidget === 'function') bwb.hideWidget(widgetName);
           performed = 'closed';
         }
         return { was_open: isOpen, performed: performed };
@@ -237,7 +245,7 @@ export async function scroll({ direction, amount }) {
 export async function mouseClick({ x, y, button, double_click }) {
   const c = await getClient();
   const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left';
-  const btnNum = btn === 'right' ? 2 : btn === 'middle' ? 1 : 0;
+  const btnNum = btn === 'right' ? 2 : btn === 'middle' ? 4 : 1;
   await c.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y });
   await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 1 });
   await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });

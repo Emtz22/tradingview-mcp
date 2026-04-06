@@ -40,34 +40,54 @@ const FIND_MONACO = `
  * Returns true if editor is accessible, false on timeout.
  */
 export async function ensurePineEditorOpen() {
+  // Check if Monaco exists AND is visible (not in a hidden/background tab)
   const already = await evaluate(`
     (function() {
       var m = ${FIND_MONACO};
-      return m !== null;
+      if (!m || !m.editor) return false;
+      var model = m.editor.getModel();
+      if (!model) return false;
+      var el = document.querySelector('.monaco-editor.pine-editor-monaco');
+      if (!el) return false;
+      // Check visibility: element must have non-zero dimensions
+      return el.offsetHeight > 20;
     })()
   `);
   if (already) return true;
 
+  // Try internal API first (most reliable)
   await evaluate(`
     (function() {
       var bwb = window.TradingView && window.TradingView.bottomWidgetBar;
       if (!bwb) return;
-      if (typeof bwb.activateScriptEditorTab === 'function') bwb.activateScriptEditorTab();
+      if (typeof bwb.open === 'function') bwb.open('scripteditor');
+      else if (typeof bwb.activateScriptEditorTab === 'function') bwb.activateScriptEditorTab();
       else if (typeof bwb.showWidget === 'function') bwb.showWidget('pine-editor');
     })()
   `);
 
+  // Fallback: try clicking the tab via multiple possible selectors
   await evaluate(`
     (function() {
       var btn = document.querySelector('[aria-label="Pine"]')
-        || document.querySelector('[data-name="pine-dialog-button"]');
+        || document.querySelector('[aria-label="Open Pine Editor"]')
+        || document.querySelector('[aria-label="Pine Editor"]')
+        || document.querySelector('[data-name="pine-dialog-button"]')
+        || document.querySelector('[data-name="scriptEditor"]');
       if (btn) btn.click();
     })()
   `);
 
   for (let i = 0; i < 50; i++) {
     await new Promise(r => setTimeout(r, 200));
-    const ready = await evaluate(`(function() { return ${FIND_MONACO} !== null; })()`);
+    const ready = await evaluate(`
+      (function() {
+        var m = ${FIND_MONACO};
+        if (!m || !m.editor) return false;
+        var model = m.editor.getModel();
+        return model !== null;
+      })()
+    `);
     if (ready) return true;
   }
   return false;
@@ -272,12 +292,20 @@ export async function setSource({ source }) {
     (function() {
       var m = ${FIND_MONACO};
       if (!m) return false;
-      m.editor.setValue(${escaped});
+      var model = m.editor.getModel();
+      if (!model) return false;
+      // Use executeEdits with full range replacement to trigger TV's change detection
+      var fullRange = model.getFullModelRange();
+      m.editor.executeEdits('mcp-set-source', [{
+        range: fullRange,
+        text: ${escaped},
+        forceMoveMarkers: true
+      }]);
       return true;
     })()
   `);
 
-  if (!set) throw new Error('Monaco found but setValue() failed.');
+  if (!set) throw new Error('Monaco found but executeEdits() failed.');
   return { success: true, lines_set: source.split('\n').length };
 }
 
@@ -316,7 +344,28 @@ export async function compile() {
   }
 
   await new Promise(r => setTimeout(r, 2000));
-  return { success: true, button_clicked: clicked || 'keyboard_shortcut', source: 'dom_fallback' };
+
+  const markers = await evaluate(`
+    (function() {
+      var m = ${FIND_MONACO};
+      if (!m) return [];
+      var model = m.editor.getModel();
+      if (!model) return [];
+      var markers = m.env.editor.getModelMarkers({ resource: model.uri });
+      return markers.map(function(mk) {
+        return { line: mk.startLineNumber, column: mk.startColumn, message: mk.message, severity: mk.severity };
+      });
+    })()
+  `);
+
+  const errors = markers || [];
+  return {
+    success: true,
+    button_clicked: clicked || 'keyboard_shortcut',
+    source: 'dom_fallback',
+    has_errors: errors.length > 0,
+    errors,
+  };
 }
 
 export async function getErrors() {
@@ -440,6 +489,19 @@ export async function smartCompile() {
     })()
   `);
 
+  // Capture markers BEFORE compile to detect when they change
+  const markersBefore = await evaluate(`
+    (function() {
+      var m = ${FIND_MONACO};
+      if (!m) return { count: -1, hash: '' };
+      var model = m.editor.getModel();
+      if (!model) return { count: -1, hash: '' };
+      var markers = m.env.editor.getModelMarkers({ resource: model.uri });
+      var hash = markers.map(function(mk) { return mk.startLineNumber + ':' + mk.message; }).join('|');
+      return { count: markers.length, hash: hash };
+    })()
+  `);
+
   const buttonClicked = await evaluate(`
     (function() {
       var btns = document.querySelectorAll('button');
@@ -469,20 +531,55 @@ export async function smartCompile() {
     await c.Input.dispatchKeyEvent({ type: 'keyUp', key: 'Enter', code: 'Enter' });
   }
 
-  await new Promise(r => setTimeout(r, 2500));
+  // Poll until markers change (compile complete) or timeout (8s)
+  let errors = [];
+  for (let attempt = 0; attempt < 40; attempt++) {
+    await new Promise(r => setTimeout(r, 200));
+    const current = await evaluate(`
+      (function() {
+        var m = ${FIND_MONACO};
+        if (!m) return { markers: [], count: -1, hash: '' };
+        var model = m.editor.getModel();
+        if (!model) return { markers: [], count: -1, hash: '' };
+        var markers = m.env.editor.getModelMarkers({ resource: model.uri });
+        var hash = markers.map(function(mk) { return mk.startLineNumber + ':' + mk.message; }).join('|');
+        return {
+          markers: markers.map(function(mk) {
+            return { line: mk.startLineNumber, column: mk.startColumn, message: mk.message, severity: mk.severity };
+          }),
+          count: markers.length,
+          hash: hash
+        };
+      })()
+    `);
+    // Markers changed from before = compile finished
+    if (current.hash !== markersBefore?.hash) {
+      errors = current.markers;
+      break;
+    }
+    // After minimum 2.5s, if still same markers and count is 0, assume clean compile
+    if (attempt >= 12 && current.count === 0 && markersBefore?.count === 0) {
+      errors = [];
+      break;
+    }
+  }
 
-  const errors = await evaluate(`
-    (function() {
-      var m = ${FIND_MONACO};
-      if (!m) return [];
-      var model = m.editor.getModel();
-      if (!model) return [];
-      var markers = m.env.editor.getModelMarkers({ resource: model.uri });
-      return markers.map(function(mk) {
-        return { line: mk.startLineNumber, column: mk.startColumn, message: mk.message, severity: mk.severity };
-      });
-    })()
-  `);
+  // Timeout: hash never changed (same errors re-compiled). Do one final read to capture current markers.
+  if (errors.length === 0) {
+    const finalMarkers = await evaluate(`
+      (function() {
+        var m = ${FIND_MONACO};
+        if (!m) return [];
+        var model = m.editor.getModel();
+        if (!model) return [];
+        var markers = m.env.editor.getModelMarkers({ resource: model.uri });
+        return markers.map(function(mk) {
+          return { line: mk.startLineNumber, column: mk.startColumn, message: mk.message, severity: mk.severity };
+        });
+      })()
+    `);
+    errors = finalMarkers || [];
+  }
 
   const studiesAfter = await evaluate(`
     (function() {
@@ -565,7 +662,10 @@ export async function openScript({ name }) {
           var id = match.scriptIdPart;
           var ver = match.version || 1;
           return fetch('https://pine-facade.tradingview.com/pine-facade/get/' + id + '/' + ver, { credentials: 'include' })
-            .then(function(r2) { return r2.json(); })
+            .then(function(r2) {
+              if (!r2.ok) return {error: 'HTTP ' + r2.status + ' fetching script source'};
+              return r2.json();
+            })
             .then(function(data) {
               var source = data.source || '';
               if (!source) return {error: 'Script source is empty', name: match.scriptName || match.scriptTitle};

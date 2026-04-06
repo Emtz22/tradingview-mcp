@@ -2,6 +2,7 @@ import CDP from 'chrome-remote-interface';
 
 let client = null;
 let targetInfo = null;
+let preferredTargetId = null;
 const CDP_HOST = 'localhost';
 const CDP_PORT = 9222;
 const MAX_RETRIES = 5;
@@ -27,6 +28,10 @@ const KNOWN_PATHS = {
 };
 
 export { KNOWN_PATHS };
+
+export function setPreferredTarget(id) {
+  preferredTargetId = id;
+}
 
 export async function getClient() {
   if (client) {
@@ -70,7 +75,17 @@ export async function connect() {
 
 async function findChartTarget() {
   const resp = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`);
+  if (!resp.ok) throw new Error(`CDP /json/list returned HTTP ${resp.status}`);
   const targets = await resp.json();
+  // If a preferred target was set (e.g. after tab_switch), connect to that one first
+  if (preferredTargetId) {
+    const preferred = targets.find(t => t.id === preferredTargetId && t.type === 'page' && /tradingview/i.test(t.url));
+    if (preferred) {
+      preferredTargetId = null;
+      return preferred;
+    }
+    preferredTargetId = null;
+  }
   // Prefer targets with tradingview.com/chart in the URL
   return targets.find(t => t.type === 'page' && /tradingview\.com\/chart/i.test(t.url))
     || targets.find(t => t.type === 'page' && /tradingview/i.test(t.url))

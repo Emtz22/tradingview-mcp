@@ -21,6 +21,37 @@ export async function create({ condition, price, message }) {
 
   await new Promise(r => setTimeout(r, 1000));
 
+  // Set condition dropdown if specified
+  if (condition) {
+    await evaluate(`
+      (function() {
+        var cond = ${JSON.stringify(condition)};
+        var condMap = {
+          'crossing': 'Crossing', 'greater_than': 'Greater Than', 'less_than': 'Less Than',
+          'entering_channel': 'Entering Channel', 'exiting_channel': 'Exiting Channel',
+          'inside_channel': 'Inside Channel', 'outside_channel': 'Outside Channel',
+          'moving_up': 'Moving Up', 'moving_down': 'Moving Down',
+          'moving_up_%': 'Moving Up %', 'moving_down_%': 'Moving Down %'
+        };
+        var target = condMap[cond] || cond;
+        // Find and click the condition dropdown button
+        var dropBlocks = document.querySelectorAll('[class*="dropdownBlock"]');
+        for (var i = 0; i < dropBlocks.length; i++) {
+          var btn = dropBlocks[i].querySelector('button[role="button"]');
+          if (btn && btn.offsetParent !== null) { btn.click(); break; }
+        }
+        // Wait a tick for popup, then select the option
+        setTimeout(function() {
+          var items = document.querySelectorAll('[class*="menuItem"], [class*="item-"], [role="option"], [role="menuitem"], [class*="dropdown"] [class*="item"]');
+          for (var j = 0; j < items.length; j++) {
+            if (items[j].textContent.trim() === target) { items[j].click(); return; }
+          }
+        }, 300);
+      })()
+    `);
+    await new Promise(r => setTimeout(r, 600));
+  }
+
   const priceSet = await evaluate(`
     (function() {
       var inputs = document.querySelectorAll('[class*="alert"] input[type="text"], [class*="alert"] input[type="number"]');
@@ -28,7 +59,7 @@ export async function create({ condition, price, message }) {
         var label = inputs[i].closest('[class*="row"]')?.querySelector('[class*="label"]');
         if (label && /value|price/i.test(label.textContent)) {
           var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          nativeSet.call(inputs[i], '${price}');
+          nativeSet.call(inputs[i], ${JSON.stringify(String(price))});
           inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
           inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
           return true;
@@ -36,7 +67,7 @@ export async function create({ condition, price, message }) {
       }
       if (inputs.length > 0) {
         var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-        nativeSet.call(inputs[0], '${price}');
+        nativeSet.call(inputs[0], ${JSON.stringify(String(price))});
         inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
         return true;
       }
@@ -76,7 +107,10 @@ export async function list() {
   // Use pricealerts REST API — returns structured data with alert_id, symbol, price, conditions
   const result = await evaluateAsync(`
     fetch('https://pricealerts.tradingview.com/list_alerts', { credentials: 'include' })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) return { alerts: [], error: 'HTTP ' + r.status + ' - are you logged into TradingView?' };
+        return r.json();
+      })
       .then(function(data) {
         if (data.s !== 'ok' || !Array.isArray(data.r)) return { alerts: [], error: data.errmsg || 'Unexpected response' };
         return {

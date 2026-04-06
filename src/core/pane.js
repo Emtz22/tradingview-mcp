@@ -136,7 +136,6 @@ export async function focus({ index }) {
  */
 export async function setSymbol({ index, symbol }) {
   const idx = Number(index);
-  const escaped = symbol.replace(/'/g, "\\'");
 
   // Focus the target pane first
   await focus({ index: idx });
@@ -147,7 +146,7 @@ export async function setSymbol({ index, symbol }) {
     (function() {
       var chart = window.TradingViewApi._activeChartWidgetWV.value();
       return new Promise(function(resolve) {
-        chart.setSymbol('${escaped}', {});
+        chart.setSymbol(${JSON.stringify(symbol)}, {});
         setTimeout(resolve, 500);
       });
     })()
