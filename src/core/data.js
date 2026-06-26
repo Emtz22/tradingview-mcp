@@ -207,6 +207,28 @@ export async function getStrategyResults() {
     await new Promise(r => setTimeout(r, 400));
   }
 
+  // v3.2.0 fallback: the report renders in the Strategy Tester DOM panel, not the source
+  // model (_reportData stays null/empty even when the UI shows results). Read the panel text
+  // directly — for an LLM the rendered report is directly usable; structured extraction off the
+  // internal model can resume if a future TV build repopulates reportData/performance.
+  if (Object.keys(results?.metrics || {}).length === 0 && !((results?.error || '').includes('No strategy found'))) {
+    const dom = await evaluate(`
+      (function(){
+        try {
+          var p = document.querySelector('[class*=backtesting]') || document.querySelector('[class*=strategyReport]') || document.querySelector('[class*=strategyTester]');
+          if (!p) return { ok:false, note:'Strategy Tester panel not in DOM — open it (ui_open_panel strategy-tester).' };
+          var t = (p.innerText || '').trim();
+          if (!t || /Add strategy to this chart|Choose strategy/i.test(t)) return { ok:false, note:'No strategy selected/computed in the Strategy Tester. With one strategy on the chart it auto-computes; with several, pick one in the tester first.' };
+          return { ok:true, text: t.slice(0, 4000) };
+        } catch(e){ return { ok:false, note: e.message }; }
+      })()
+    `);
+    if (dom && dom.ok && dom.text) {
+      return { success: true, source: 'dom_strategy_tester', metric_count: 0, metrics: {}, rendered_report: dom.text };
+    }
+    return { success: true, metric_count: 0, source: results?.source, metrics: {}, error: results?.error, dom_note: dom && dom.note };
+  }
+
   return { success: true, metric_count: Object.keys(results?.metrics || {}).length, source: results?.source, metrics: results?.metrics || {}, error: results?.error };
 }
 
