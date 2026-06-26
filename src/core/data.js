@@ -133,7 +133,7 @@ export async function getIndicator({ entity_id }) {
 }
 
 export async function getStrategyResults() {
-  const results = await evaluate(`
+  const fetchMetrics = `
     (function() {
       try {
         var chart = ${CHART_API}._chartWidget;
@@ -141,7 +141,19 @@ export async function getStrategyResults() {
         var strat = null;
         for (var i = 0; i < sources.length; i++) {
           var s = sources[i];
-          if (s.metaInfo && s.metaInfo().is_price_study === false && (s.reportData || s.performance)) { strat = s; break; }
+          try {
+            var meta = s.metaInfo ? s.metaInfo() : null;
+            if (meta && meta.isTVScriptStrategy && (s.reportData || s.performance)) { strat = s; break; }
+          } catch(e2) { continue; }
+        }
+        if (!strat) {
+          for (var i2 = 0; i2 < sources.length; i2++) {
+            var s2b = sources[i2];
+            try {
+              var meta2 = s2b.metaInfo ? s2b.metaInfo() : null;
+              if (meta2 && meta2.is_price_study === false && s2b.reportData) { strat = s2b; break; }
+            } catch(e3) { continue; }
+          }
         }
         if (!strat) return {metrics: {}, source: 'internal_api', error: 'No strategy found on chart. Add a strategy indicator first.'};
         var metrics = {};
@@ -149,18 +161,52 @@ export async function getStrategyResults() {
           var rd = typeof strat.reportData === 'function' ? strat.reportData() : strat.reportData;
           if (rd && typeof rd === 'object') {
             if (typeof rd.value === 'function') rd = rd.value();
-            if (rd) { var keys = Object.keys(rd); for (var k = 0; k < keys.length; k++) { var val = rd[keys[k]]; if (val !== null && val !== undefined && typeof val !== 'function') metrics[keys[k]] = val; } }
+            else if (typeof rd.peek === 'function') rd = rd.peek();
+            if (rd) {
+              // Extract nested performance object (contains PF, win rate, etc.)
+              var perf = rd.performance;
+              if (perf && typeof perf === 'object') {
+                var sections = Object.keys(perf);
+                for (var s2 = 0; s2 < sections.length; s2++) {
+                  var section = perf[sections[s2]];
+                  if (section && typeof section === 'object' && !Array.isArray(section)) {
+                    var skeys = Object.keys(section);
+                    for (var sk = 0; sk < skeys.length; sk++) {
+                      var sv = section[skeys[sk]];
+                      if (sv !== null && sv !== undefined && typeof sv !== 'function' && typeof sv !== 'object') {
+                        metrics[sections[s2] + '_' + skeys[sk]] = sv;
+                      }
+                    }
+                  }
+                }
+              }
+              // Add top-level scalars (currency, firstTradeIndex)
+              if (rd.currency) metrics.currency = rd.currency;
+              if (rd.filledOrders) metrics.trade_count = Array.isArray(rd.filledOrders) ? rd.filledOrders.length : 0;
+              if (rd.trades) metrics.closed_trade_count = Array.isArray(rd.trades) ? rd.trades.length : 0;
+            }
           }
         }
         if (Object.keys(metrics).length === 0 && strat.performance) {
-          var perf = strat.performance();
-          if (perf && typeof perf.value === 'function') perf = perf.value();
-          if (perf && typeof perf === 'object') { var pkeys = Object.keys(perf); for (var p = 0; p < pkeys.length; p++) { var pval = perf[pkeys[p]]; if (pval !== null && pval !== undefined && typeof pval !== 'function') metrics[pkeys[p]] = pval; } }
+          var perf2 = typeof strat.performance === 'function' ? strat.performance() : strat.performance;
+          if (perf2 && typeof perf2.value === 'function') perf2 = perf2.value();
+          else if (perf2 && typeof perf2.peek === 'function') perf2 = perf2.peek();
+          if (perf2 && typeof perf2 === 'object') { var pkeys = Object.keys(perf2); for (var p = 0; p < pkeys.length; p++) { var pval = perf2[pkeys[p]]; if (pval !== null && pval !== undefined && typeof pval !== 'function') metrics[pkeys[p]] = pval; } }
         }
         return {metrics: metrics, source: 'internal_api'};
       } catch(e) { return {metrics: {}, source: 'internal_api', error: e.message}; }
     })()
-  `);
+  `;
+
+  // Retry up to 20 times (8s total) waiting for strategy data to populate
+  let results;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    results = await evaluate(fetchMetrics);
+    if (results?.metrics && Object.keys(results.metrics).length > 0) break;
+    if (results?.error && results.error.includes('No strategy found')) break;
+    await new Promise(r => setTimeout(r, 400));
+  }
+
   return { success: true, metric_count: Object.keys(results?.metrics || {}).length, source: results?.source, metrics: results?.metrics || {}, error: results?.error };
 }
 
@@ -174,11 +220,32 @@ export async function getTrades({ max_trades } = {}) {
         var strat = null;
         for (var i = 0; i < sources.length; i++) {
           var s = sources[i];
-          if (s.metaInfo && s.metaInfo().is_price_study === false && (s.ordersData || s.reportData)) { strat = s; break; }
+          try {
+            var meta = s.metaInfo ? s.metaInfo() : null;
+            if (meta && meta.isTVScriptStrategy && (s.ordersData || s.reportData)) { strat = s; break; }
+          } catch(e2) { continue; }
+        }
+        if (!strat) {
+          for (var i2 = 0; i2 < sources.length; i2++) {
+            var s2b = sources[i2];
+            try {
+              var meta2 = s2b.metaInfo ? s2b.metaInfo() : null;
+              if (meta2 && meta2.is_price_study === false && (s2b.ordersData || s2b.reportData)) { strat = s2b; break; }
+            } catch(e3) { continue; }
+          }
         }
         if (!strat) return {trades: [], source: 'internal_api', error: 'No strategy found on chart.'};
         var orders = null;
-        if (strat.ordersData) { orders = typeof strat.ordersData === 'function' ? strat.ordersData() : strat.ordersData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
+        // Try reportData().filledOrders first (most reliable for overlay strategies)
+        if (strat.reportData) {
+          var rd = typeof strat.reportData === 'function' ? strat.reportData() : strat.reportData;
+          if (rd && rd.filledOrders && Array.isArray(rd.filledOrders)) orders = rd.filledOrders;
+          else if (rd && rd.trades && Array.isArray(rd.trades)) orders = rd.trades;
+        }
+        // Fallback: ordersData()
+        if (!orders || !Array.isArray(orders)) {
+          if (strat.ordersData) { orders = typeof strat.ordersData === 'function' ? strat.ordersData() : strat.ordersData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
+        }
         if (!orders || !Array.isArray(orders)) {
           if (strat._orders) orders = strat._orders;
           else if (strat.tradesData) { orders = typeof strat.tradesData === 'function' ? strat.tradesData() : strat.tradesData; if (orders && typeof orders.value === 'function') orders = orders.value(); }
@@ -210,7 +277,19 @@ export async function getEquity() {
         var strat = null;
         for (var i = 0; i < sources.length; i++) {
           var s = sources[i];
-          if (s.metaInfo && s.metaInfo().is_price_study === false && (s.reportData || s.performance)) { strat = s; break; }
+          try {
+            var meta = s.metaInfo ? s.metaInfo() : null;
+            if (meta && meta.isTVScriptStrategy && (s.reportData || s.performance)) { strat = s; break; }
+          } catch(e2) { continue; }
+        }
+        if (!strat) {
+          for (var i2 = 0; i2 < sources.length; i2++) {
+            var s2b = sources[i2];
+            try {
+              var meta2 = s2b.metaInfo ? s2b.metaInfo() : null;
+              if (meta2 && meta2.is_price_study === false && s2b.reportData) { strat = s2b; break; }
+            } catch(e3) { continue; }
+          }
         }
         if (!strat) return {data: [], source: 'internal_api', error: 'No strategy found on chart.'};
         var data = [];
@@ -229,7 +308,7 @@ export async function getEquity() {
         if (data.length === 0) {
           var perfData = {};
           if (strat.performance) {
-            var perf = strat.performance();
+            var perf = typeof strat.performance === 'function' ? strat.performance() : strat.performance;
             if (perf && typeof perf.value === 'function') perf = perf.value();
             if (perf && typeof perf === 'object') { var pkeys = Object.keys(perf); for (var p = 0; p < pkeys.length; p++) { if (/equity|drawdown|profit|net/i.test(pkeys[p])) perfData[pkeys[p]] = perf[pkeys[p]]; } }
           }
