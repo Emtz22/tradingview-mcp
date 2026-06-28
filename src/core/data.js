@@ -8,6 +8,180 @@ const MAX_TRADES = 20;
 const CHART_API = KNOWN_PATHS.chartApi;
 const BARS_PATH = KNOWN_PATHS.mainSeriesBars;
 
+/**
+ * Normalize a numeric string from the Strategy Tester panel:
+ *   - strips thousands commas
+ *   - replaces unicode minus (U+2212) with ASCII hyphen
+ *   - strips leading "+" and trailing "%" or "USD"
+ */
+function _normalizeNum(raw) {
+  if (!raw) return null;
+  const s = raw.replace(/−/g, '-').replace(/,/g, '').replace(/^[+]/, '').replace(/[%]$/, '').replace(/\s*USD\s*$/i, '').trim();
+  const v = parseFloat(s);
+  return isNaN(v) ? null : v;
+}
+
+/**
+ * Parse the innerText of the Strategy Tester panel into structured metrics.
+ * Returns an object containing only the keys that were found and successfully parsed.
+ * The full rendered_report text is NOT included here — caller wraps it.
+ *
+ * Recognized keys (all optional, only returned when found):
+ *   total_pnl_usd, total_pnl_pct, max_drawdown_usd, max_drawdown_pct,
+ *   profitable_pct, trades_won, trades_total, profit_factor, sharpe,
+ *   total_trades, avg_pnl_usd, avg_pnl_pct, cagr, expected_payoff_usd
+ *
+ * @param {string} text — Strategy Tester panel innerText
+ * @returns {{ [key: string]: number }}
+ */
+export function parseRenderedReport(text) {
+  if (!text || typeof text !== 'string') return {};
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const metrics = {};
+
+  // Helper: find line index by label (case-insensitive exact or anchored match)
+  function findLabel(pattern) {
+    const re = typeof pattern === 'string' ? new RegExp('^' + pattern + '$', 'i') : pattern;
+    return lines.findIndex(l => re.test(l));
+  }
+
+  // Total PnL — label "Total PnL", then USD value, then "USD", then pct value, then "%"
+  // We do NOT use substring match on "PnL" alone to avoid collision with "Average PnL".
+  {
+    const idx = findLabel('Total PnL');
+    if (idx >= 0) {
+      // Next non-empty lines: value, "USD", pct
+      const usdVal = _normalizeNum(lines[idx + 1]);
+      if (usdVal !== null) metrics.total_pnl_usd = usdVal;
+      // line[idx+2] should be "USD" — skip it; line[idx+3] is pct
+      const pctRaw = lines[idx + 3] || lines[idx + 2];
+      const pctVal = _normalizeNum(pctRaw);
+      if (pctVal !== null && pctRaw && (pctRaw.includes('%') || (!isNaN(pctVal) && Math.abs(pctVal) > 10))) {
+        metrics.total_pnl_pct = pctVal;
+      }
+    }
+  }
+
+  // Max drawdown — "Max drawdown", USD value, "USD", pct value
+  {
+    const idx = findLabel(/^Max drawdown$/i);
+    if (idx >= 0) {
+      const usdVal = _normalizeNum(lines[idx + 1]);
+      if (usdVal !== null) metrics.max_drawdown_usd = usdVal;
+      const pctRaw = lines[idx + 3] || lines[idx + 2];
+      const pctVal = _normalizeNum(pctRaw);
+      if (pctVal !== null) metrics.max_drawdown_pct = pctVal;
+    }
+  }
+
+  // Profitable trades — "Profitable trades", pct line ("28.02%"), then "760/2712"
+  {
+    const idx = findLabel(/^Profitable trades?$/i);
+    if (idx >= 0) {
+      const pctRaw = lines[idx + 1];
+      const pctVal = _normalizeNum(pctRaw);
+      if (pctVal !== null) metrics.profitable_pct = pctVal;
+      // Next line may be "760/2712"
+      const fracRaw = lines[idx + 2];
+      if (fracRaw) {
+        const m = fracRaw.match(/^(\d[\d,]*)\/(\d[\d,]*)$/);
+        if (m) {
+          metrics.trades_won = parseInt(m[1].replace(/,/g, ''), 10);
+          metrics.trades_total = parseInt(m[2].replace(/,/g, ''), 10);
+        }
+      }
+    }
+  }
+
+  // Profit factor — "Profit factor", value
+  {
+    const idx = findLabel(/^Profit factor$/i);
+    if (idx >= 0) {
+      const v = _normalizeNum(lines[idx + 1]);
+      if (v !== null) metrics.profit_factor = v;
+    }
+  }
+
+  // Sharpe ratio — "Sharpe ratio", value
+  {
+    const idx = findLabel(/^Sharpe ratio$/i);
+    if (idx >= 0) {
+      const v = _normalizeNum(lines[idx + 1]);
+      if (v !== null) metrics.sharpe = v;
+    }
+  }
+
+  // Total trades (standalone "Total trades" label, not in this fixture but supported)
+  {
+    const idx = findLabel(/^Total trades$/i);
+    if (idx >= 0) {
+      const v = _normalizeNum(lines[idx + 1]);
+      if (v !== null) metrics.total_trades = v;
+    }
+  }
+
+  // Average PnL — "Average PnL", USD value, "USD", pct value
+  {
+    const idx = findLabel(/^Average PnL$/i);
+    if (idx >= 0) {
+      const usdVal = _normalizeNum(lines[idx + 1]);
+      if (usdVal !== null) metrics.avg_pnl_usd = usdVal;
+      const pctRaw = lines[idx + 3] || lines[idx + 2];
+      const pctVal = _normalizeNum(pctRaw);
+      if (pctVal !== null) metrics.avg_pnl_pct = pctVal;
+    }
+  }
+
+  // CAGR — "CAGR", value (e.g. "28.01%")
+  {
+    const idx = findLabel(/^CAGR$/i);
+    if (idx >= 0) {
+      const v = _normalizeNum(lines[idx + 1]);
+      if (v !== null) metrics.cagr = v;
+    }
+  }
+
+  // Expected payoff — "Expected payoff", USD value, "USD"
+  {
+    const idx = findLabel(/^Expected payoff$/i);
+    if (idx >= 0) {
+      const v = _normalizeNum(lines[idx + 1]);
+      if (v !== null) metrics.expected_payoff_usd = v;
+    }
+  }
+
+  return metrics;
+}
+
+/**
+ * Compute a simple hash of a string for stability comparison (Bug 3).
+ * Pure function — no browser, no async.
+ */
+export function hashText(text) {
+  if (!text) return '';
+  let h = 0;
+  for (let i = 0; i < text.length; i++) {
+    h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
+  }
+  return h.toString(16);
+}
+
+/**
+ * Determine whether a sequence of (text, timestamp) snapshots indicates stable output.
+ * A sequence is considered stable when the two most recent entries have the same hash
+ * and are separated by at least minGapMs milliseconds.
+ *
+ * @param {Array<{text: string, ts: number}>} snapshots
+ * @param {number} minGapMs — minimum gap between last two matching snapshots (default 600)
+ * @returns {boolean}
+ */
+export function isStableSequence(snapshots, minGapMs = 600) {
+  if (!snapshots || snapshots.length < 2) return false;
+  const last = snapshots[snapshots.length - 1];
+  const prev = snapshots[snapshots.length - 2];
+  return hashText(last.text) === hashText(prev.text) && (last.ts - prev.ts) >= minGapMs;
+}
+
 function buildGraphicsJS(collectionName, mapKey, filter) {
   return `
     (function() {
@@ -224,12 +398,61 @@ export async function getStrategyResults() {
       })()
     `);
     if (dom && dom.ok && dom.text) {
-      return { success: true, source: 'dom_strategy_tester', metric_count: 0, metrics: {}, rendered_report: dom.text };
+      const parsedMetrics = parseRenderedReport(dom.text);
+      return {
+        success: true,
+        source: 'dom_strategy_tester',
+        metric_count: Object.keys(parsedMetrics).length,
+        metrics: parsedMetrics,
+        rendered_report: dom.text,
+      };
     }
     return { success: true, metric_count: 0, source: results?.source, metrics: {}, error: results?.error, dom_note: dom && dom.note };
   }
 
   return { success: true, metric_count: Object.keys(results?.metrics || {}).length, source: results?.source, metrics: results?.metrics || {}, error: results?.error };
+}
+
+/**
+ * Bug 3 fix: poll the Strategy Tester DOM panel until its text is STABLE across
+ * two consecutive reads separated by ~600 ms, before returning the result.
+ *
+ * Uses the pure helpers hashText() and isStableSequence() for testability.
+ *
+ * @param {{ waitStable?: boolean, stableGapMs?: number, timeoutMs?: number }} opts
+ * @returns {Promise<object>} — same shape as getStrategyResults()
+ */
+export async function waitStableStrategyResults({ waitStable = true, stableGapMs = 600, timeoutMs = 12000 } = {}) {
+  if (!waitStable) {
+    return getStrategyResults();
+  }
+
+  const readPanelText = async () => {
+    const dom = await evaluate(`
+      (function(){
+        try {
+          var p = document.querySelector('[class*=backtesting]') || document.querySelector('[class*=strategyReport]') || document.querySelector('[class*=strategyTester]');
+          if (!p) return null;
+          return (p.innerText || '').trim().slice(0, 4000);
+        } catch(e){ return null; }
+      })()
+    `);
+    return dom || null;
+  };
+
+  const snapshots = [];
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const text = await readPanelText();
+    if (text) {
+      snapshots.push({ text, ts: Date.now() });
+      if (isStableSequence(snapshots, stableGapMs)) break;
+    }
+    await new Promise(r => setTimeout(r, stableGapMs / 2));
+  }
+
+  return getStrategyResults();
 }
 
 export async function getTrades({ max_trades } = {}) {

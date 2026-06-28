@@ -504,28 +504,48 @@ export async function smartCompile() {
 
   const buttonClicked = await evaluate(`
     (function() {
+      function isVisible(el) { return el && el.offsetParent !== null; }
       var btns = document.querySelectorAll('button');
       var addBtn = null;
       var updateBtn = null;
       var saveBtn = null;
+      var visibleTexts = [];
       for (var i = 0; i < btns.length; i++) {
-        var text = btns[i].textContent.trim();
-        if (/save and add to chart/i.test(text)) {
-          btns[i].click();
+        var b = btns[i];
+        if (!isVisible(b)) continue;
+        var text = b.textContent.trim();
+        visibleTexts.push(text);
+        if (/save\\s+and\\s+add\\s+to\\s+chart/i.test(text)) {
+          b.click();
           return 'Save and add to chart';
         }
-        if (!addBtn && /^add to chart$/i.test(text)) addBtn = btns[i];
-        if (!updateBtn && /^update on chart$/i.test(text)) updateBtn = btns[i];
-        if (!saveBtn && btns[i].className.indexOf('saveButton') !== -1 && btns[i].offsetParent !== null) saveBtn = btns[i];
+        if (!addBtn && /add\\s+to\\s+chart/i.test(text)) addBtn = b;
+        if (!updateBtn && /update\\s+(on|to)\\s+chart/i.test(text)) updateBtn = b;
+        if (!saveBtn && (b.className.indexOf('saveButton') !== -1 || /save/i.test(text)) && isVisible(b)) saveBtn = b;
       }
       if (addBtn) { addBtn.click(); return 'Add to chart'; }
       if (updateBtn) { updateBtn.click(); return 'Update on chart'; }
-      if (saveBtn) { saveBtn.click(); return 'Pine Save'; }
-      return null;
+      if (saveBtn) {
+        saveBtn.click();
+        // Re-scan once for add/update button that may appear after save
+        var btns2 = document.querySelectorAll('button');
+        for (var j = 0; j < btns2.length; j++) {
+          if (!isVisible(btns2[j])) continue;
+          var t2 = btns2[j].textContent.trim();
+          if (/add\\s+to\\s+chart/i.test(t2) || /update\\s+(on|to)\\s+chart/i.test(t2)) {
+            btns2[j].click();
+            return 'Pine Save then ' + t2;
+          }
+        }
+        return 'Pine Save';
+      }
+      return { no_button_found: true, available_buttons: visibleTexts };
     })()
   `);
 
-  if (!buttonClicked) {
+  // buttonClicked is a string on success, an object { no_button_found, available_buttons } when no button was found, or null
+  const noButtonFound = !buttonClicked || (typeof buttonClicked === 'object' && buttonClicked.no_button_found);
+  if (noButtonFound) {
     const c = await getClient();
     await c.Input.dispatchKeyEvent({ type: 'keyDown', modifiers: 2, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await c.Input.dispatchKeyEvent({ type: 'keyUp', key: 'Enter', code: 'Enter' });
