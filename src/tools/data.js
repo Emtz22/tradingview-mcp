@@ -18,8 +18,15 @@ export function registerDataTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('data_get_strategy_results', 'Get strategy performance metrics from Strategy Tester', {}, async () => {
-    try { return jsonResult(await core.getStrategyResults()); }
+  server.tool('data_get_strategy_results', 'Get strategy performance metrics from Strategy Tester', {
+    wait_stable: z.coerce.boolean().optional().describe('If true, poll until the panel text is stable (2 identical reads ≥600ms apart) before returning — use after a symbol or input change to avoid a stale read.'),
+  }, async ({ wait_stable } = {}) => {
+    try {
+      const result = wait_stable
+        ? await core.waitStableStrategyResults({ waitStable: true })
+        : await core.getStrategyResults();
+      return jsonResult(result);
+    }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 

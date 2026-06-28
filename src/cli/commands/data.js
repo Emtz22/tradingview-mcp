@@ -60,7 +60,12 @@ register('data', {
     }],
     ['strategy', {
       description: 'Get strategy performance metrics',
-      handler: () => core.getStrategyResults(),
+      options: {
+        'wait-stable': { type: 'boolean', short: 'w', description: 'Poll until panel text is stable before returning (use after symbol/input change)' },
+      },
+      handler: (opts) => opts['wait-stable']
+        ? core.waitStableStrategyResults({ waitStable: true })
+        : core.getStrategyResults(),
     }],
     ['trades', {
       description: 'Get strategy trade list',
