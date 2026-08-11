@@ -55,4 +55,5 @@ Report:
 
 - Step through 5-10 bars at a time to find setups, then slow down for entry timing
 - Use `replay_autoplay` with speed control for faster scanning
-- Add drawings with `draw_shape` to mark entry/exit points for review
+- Use native `draw_position` objects for planned trades; use `draw_note` for exact-bar observations.
+- Track every task-created drawing ID and remove it with `draw_remove_one`; never use `draw_clear` for scoped cleanup.

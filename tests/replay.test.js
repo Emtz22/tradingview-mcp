@@ -7,6 +7,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { start, step, autoplay, stop, trade, status, VALID_AUTOPLAY_DELAYS } from '../src/core/replay.js';
 
+const DAY_MS = 86_400_000;
+const REPLAY_FIXTURE_DATE = new Date(Date.now() - (30 * DAY_MS)).toISOString().slice(0, 10);
+const REPLAY_FIXTURE_TIMESTAMP_MS = new Date(REPLAY_FIXTURE_DATE).getTime();
+
 // ── Mock helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -48,18 +52,18 @@ describe('start() — date selection and polling', () => {
       'showReplayToolbar': undefined,
       'selectDate': 'ok',
       'isReplayStarted': true,
-      'currentDate': 1773532799,
+      'currentDate': REPLAY_FIXTURE_TIMESTAMP_MS / 1000,
     });
-    const result = await start({ date: '2026-03-15', _deps });
+    const result = await start({ date: REPLAY_FIXTURE_DATE, _deps });
     assert.equal(result.success, true);
     assert.equal(result.replay_started, true);
-    assert.equal(result.current_date, 1773532799);
-    assert.equal(result.date, '2026-03-15');
+    assert.equal(result.current_date, REPLAY_FIXTURE_TIMESTAMP_MS / 1000);
+    assert.equal(result.date, REPLAY_FIXTURE_DATE);
     // Verify selectDate was called with timestamp and .then()
     const selectCall = evaluate.calls.find(c => c.includes('selectDate'));
     assert.ok(selectCall, 'selectDate was called');
     assert.ok(selectCall.includes('.then('), 'promise is awaited via .then()');
-    assert.ok(selectCall.includes('1773532800000') || selectCall.includes('177'), 'passes ms timestamp');
+    assert.ok(selectCall.includes(String(REPLAY_FIXTURE_TIMESTAMP_MS)), 'passes ms timestamp');
   });
 
   it('calls selectFirstAvailableDate when no date given', async () => {
@@ -91,7 +95,7 @@ describe('start() — date selection and polling', () => {
   it('throws when replay not available', async () => {
     const { _deps } = mockDeps({ 'isReplayAvailable': false });
     await assert.rejects(
-      () => start({ date: '2026-01-01', _deps }),
+      () => start({ date: REPLAY_FIXTURE_DATE, _deps }),
       (err) => err.message.includes('not available'),
     );
   });
@@ -111,7 +115,7 @@ describe('start() — date selection and polling', () => {
       return undefined;
     };
     evaluate.calls = [];
-    const result = await start({ date: '2026-01-01', _deps: { evaluate, getReplayApi: mockGetReplayApi() } });
+    const result = await start({ date: REPLAY_FIXTURE_DATE, _deps: { evaluate, getReplayApi: mockGetReplayApi() } });
     assert.equal(result.success, true);
     assert.equal(result.current_date, 1700000000);
     assert.ok(pollCount >= 4, 'polled multiple times');
@@ -129,7 +133,7 @@ describe('start() — date selection and polling', () => {
     };
     evaluate.calls = [];
     await assert.rejects(
-      () => start({ date: '2026-01-01', _deps: { evaluate, getReplayApi: mockGetReplayApi() } }),
+      () => start({ date: REPLAY_FIXTURE_DATE, _deps: { evaluate, getReplayApi: mockGetReplayApi() } }),
       (err) => {
         assert.ok(err.message.includes('Replay failed to start'));
         return true;
@@ -257,24 +261,52 @@ describe('autoplay() — delay validation', () => {
 // ── stop() ───────────────────────────────────────────────────────────────
 
 describe('stop()', () => {
-  it('calls stopReplay when started', async () => {
-    const { _deps, evaluate } = mockDeps({
-      'isReplayStarted': true,
-      'stopReplay': undefined,
-    });
-    const result = await stop({ _deps });
+  it('uses leaveReplay and verifies authoritative stopped state', async () => {
+    let stateReads = 0;
+    const evaluate = async (expression) => {
+      if (expression.includes('is_replay_started:')) {
+        stateReads++;
+        return stateReads === 1
+          ? { is_replay_started: true, replay_mode: 'ActiveChart', current_date: 123, toolbar_visible: true }
+          : { is_replay_started: false, replay_mode: null, current_date: null, toolbar_visible: false };
+      }
+      if (expression.includes('leaveReplay')) return { dispatched: true, route: 'leaveReplay(skipConfirm)' };
+      return undefined;
+    };
+    evaluate.calls = [];
+    const result = await stop({ _deps: { evaluate, getReplayApi: mockGetReplayApi(), sleep: async () => {} } });
     assert.equal(result.success, true);
     assert.equal(result.action, 'replay_stopped');
-    const stopCall = evaluate.calls.find(c => c.includes('stopReplay'));
-    assert.ok(stopCall, 'stopReplay was called');
+    assert.equal(result.route, 'leaveReplay(skipConfirm)');
+    assert.equal(result.state.is_replay_started, false);
   });
 
   it('returns already_stopped when not started', async () => {
-    const { _deps, evaluate } = mockDeps({ 'isReplayStarted': false });
-    const result = await stop({ _deps });
+    const evaluate = async () => ({ is_replay_started: false, replay_mode: null, current_date: null, toolbar_visible: false });
+    evaluate.calls = [];
+    const result = await stop({ _deps: { evaluate, getReplayApi: mockGetReplayApi(), sleep: async () => {} } });
     assert.equal(result.action, 'already_stopped');
-    const stopCall = evaluate.calls.find(c => c.includes('stopReplay'));
-    assert.equal(stopCall, undefined, 'stopReplay not called');
+    assert.equal(result.state.is_replay_started, false);
+  });
+
+  it('fails with typed runtime-stuck evidence instead of claiming success', async () => {
+    const active = { is_replay_started: true, replay_mode: 'ActiveChart', current_date: 123, toolbar_visible: false };
+    const evaluate = async (expression) => {
+      if (expression.includes('is_replay_started:')) return active;
+      if (expression.includes('leaveReplay')) return { dispatched: true, route: 'leaveReplay(skipConfirm)' };
+      if (expression.includes('_forceStopReplay')) {
+        return { error: { code: 'REPLAY_STOP_RUNTIME_STUCK', message: 'Replay manager is already stuck in a stopping state' } };
+      }
+      return undefined;
+    };
+    await assert.rejects(
+      stop({ _deps: { evaluate, getReplayApi: mockGetReplayApi(), sleep: async () => {} } }),
+      (error) => {
+        assert.equal(error.code, 'REPLAY_STOP_RUNTIME_STUCK');
+        assert.equal(error.details.after.is_replay_started, true);
+        return true;
+      },
+    );
   });
 
   it('does not call hideReplayToolbar', () => {

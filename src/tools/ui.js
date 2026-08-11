@@ -2,6 +2,15 @@ import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/ui.js';
 
+export function uiErrorPayload(err) {
+  return {
+    success: false,
+    error: err.message || String(err),
+    error_code: err.code || 'UI_OPERATION_FAILED',
+    details: err.details || undefined,
+  };
+}
+
 export function registerUiTools(server) {
   server.tool('ui_click', 'Click a UI element by aria-label, data-name, text content, or class substring', {
     by: z.enum(['aria-label', 'data-name', 'text', 'class-contains']).describe('Selector strategy'),
@@ -16,7 +25,7 @@ export function registerUiTools(server) {
     action: z.enum(['open', 'close', 'toggle']).describe('Action to perform'),
   }, async ({ panel, action }) => {
     try { return jsonResult(await core.openPanel({ panel, action })); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+    catch (err) { return jsonResult(uiErrorPayload(err), true); }
   });
 
   server.tool('ui_fullscreen', 'Toggle TradingView fullscreen mode', {}, async () => {

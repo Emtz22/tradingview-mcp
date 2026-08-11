@@ -70,6 +70,32 @@ describe('CLI — help and routing', () => {
     assert.ok(stdout.includes('compile'));
     assert.ok(stdout.includes('analyze'));
     assert.ok(stdout.includes('check'));
+    assert.ok(stdout.includes('context'));
+    assert.ok(stdout.includes('save-as'));
+    assert.ok(stdout.includes('instances'));
+    assert.ok(stdout.includes('delete'));
+  });
+
+  it('pine lifecycle help exposes instance/model/source guards and exact delete identity', () => {
+    for (const subcommand of ['set', 'compile', 'save', 'save-as', 'new', 'open']) {
+      const { stdout, exitCode } = run(['pine', subcommand, '--help']);
+      assert.equal(exitCode, 0, `pine ${subcommand} --help exits cleanly`);
+      for (const flag of ['--placement', '--expected-editor-instance-id', '--expected-model-uri', '--expected-source-sha256']) {
+        assert.ok(stdout.includes(flag), `pine ${subcommand} help includes ${flag}`);
+      }
+    }
+    const { stdout, exitCode } = run(['pine', 'delete', '--help']);
+    assert.equal(exitCode, 0);
+    for (const flag of ['--id', '--name', '--version']) assert.ok(stdout.includes(flag), `pine delete help includes ${flag}`);
+  });
+
+  it('draw --help exposes registry, native position, exact note, update, and exact removal', () => {
+    const { stdout, exitCode } = run(['draw', '--help']);
+    assert.equal(exitCode, 0);
+    for (const name of ['capabilities', 'shape', 'position', 'note', 'update', 'remove']) {
+      assert.ok(stdout.includes(name), `draw help includes ${name}`);
+    }
+    assert.ok(stdout.includes('capabilities  List'), 'longest subcommand remains separated from its description');
   });
 
   it('ohlcv --help shows options', () => {

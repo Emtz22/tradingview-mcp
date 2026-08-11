@@ -56,10 +56,10 @@ See [RESEARCH.md](RESEARCH.md) for open questions, findings, and related work.
 
 Gives your AI assistant eyes and hands on your own chart:
 
-- **Pine Script development** — write, inject, compile, debug, and iterate on scripts with AI assistance
+- **Pine Script development** — inspect selected identity/hash, create native drafts, guarded source edits, verified save/save-as, compile, and debug
 - **Chart navigation** — change symbols, timeframes, zoom to dates, add/remove indicators
 - **Visual analysis** — read your chart's indicator values, price levels, and annotations
-- **Draw on charts** — trend lines, horizontal lines, rectangles, text annotations
+- **Draw on charts** — typed one/two/N-point tool registry, exact-bar notes, and native Long/Short Position objects
 - **Manage alerts** — create, list, and delete price alerts
 - **Replay practice** — step through historical bars, practice entries/exits
 - **Screenshots** — capture chart state for AI visual analysis
@@ -154,7 +154,9 @@ tv quote                           # current price
 tv symbol AAPL                     # change symbol
 tv ohlcv --summary                 # price summary
 tv screenshot -r chart             # capture chart
-tv pine compile                    # compile Pine Script
+tv pine instances                  # live Pine facade/model receipts
+tv pine context --placement bottom # selected instance/model/identity/hash guards
+tv draw capabilities               # supported shapes, arity, and dispositions
 tv pane layout 2x2                 # 4-chart grid
 tv pane symbol 1 ES1!              # set pane symbol
 tv stream quote | jq '.close'      # monitor price changes
@@ -166,8 +168,8 @@ tv stream quote | jq '.close'      # monitor price changes
 tv status / launch / state / symbol / timeframe / type / info / search
 tv quote / ohlcv / values
 tv data lines/labels/tables/boxes/strategy/trades/equity/depth/indicator
-tv pine get/set/compile/analyze/check/save/new/open/list/errors/console
-tv draw shape/list/get/remove/clear
+tv pine instances/context/get/set/compile/analyze/check/save/save-as/new/open/list/delete/errors/console
+tv draw capabilities/shape/position/note/list/get/update/remove/clear
 tv alert list/create/delete
 tv watchlist get/add
 tv indicator add/remove/toggle/set/get
@@ -209,13 +211,13 @@ Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project
 | "Read the session table" | `data_get_pine_tables` with `study_filter` |
 | "Give me a full analysis" | `quote_get` → `data_get_study_values` → `data_get_pine_lines` → `data_get_pine_labels` → `data_get_pine_tables` → `data_get_ohlcv` (summary) → `capture_screenshot` |
 | "Switch to AAPL daily" | `chart_set_symbol` → `chart_set_timeframe` |
-| "Write a Pine Script for..." | `pine_set_source` → `pine_smart_compile` → `pine_get_errors` |
+| "Write a Pine Script for..." | `pine_list_editor_instances` → placement-bound context → guarded `pine_new` / `pine_set_source` → guarded compile/save |
 | "Start replay at March 1st" | `replay_start` → `replay_step` → `replay_trade` |
 | "Set up a 4-chart grid" | `pane_set_layout` → `pane_set_symbol` for each pane |
 | "Draw a level at 24500" | `draw_shape` (horizontal_line) |
 | "Take a screenshot" | `capture_screenshot` |
 
-## Tool Reference (78 MCP tools)
+## Tool Reference (86 MCP tools)
 
 ### Chart Reading
 
@@ -273,16 +275,21 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 
 | Tool | Step |
 |------|------|
-| `pine_set_source` | 1. Inject code into editor |
-| `pine_smart_compile` | 2. Compile with auto-detection + error check |
-| `pine_get_errors` | 3. Read compilation errors if any |
-| `pine_get_console` | 4. Read log.info() output |
-| `pine_save` | 5. Save to TradingView cloud |
-| `pine_get_source` | Read current script (**warning: can be 200KB+ for complex scripts**) |
-| `pine_new` | Create blank indicator/strategy/library |
-| `pine_open` / `pine_list_scripts` | Open or list saved scripts |
+| `pine_list_editor_instances` | 1. List each live facade/placement/model plus unsupported orphan Monaco models |
+| `pine_get_context` | 2. Read placement-bound editor instance, model URI, saved/draft identity, and source hashes |
+| `pine_new` | 3. Create a native draft on that facade and require a changed model URI |
+| `pine_set_source` | 4. Write only when instance/model/source and saved-ID/draft-token guards all match |
+| `pine_smart_compile` | 5. Compile through the same facade and read same-model markers/study diagnostics |
+| `pine_get_errors` / `pine_get_console` | Placement-scoped errors and logs |
+| `pine_save` | Persist the guarded saved script and verify canonical/readback source |
+| `pine_save_as` | Create an exact ID, verify canonical source, then bind it to the same facade |
+| `pine_get_source` | Read placement-bound source plus identity (**warning: can be 200KB+**) |
+| `pine_open` / `pine_list_scripts` | Exact canonical open or account script listing |
+| `pine_delete_script` | Delete one exact ID/name/version and verify absence; no bulk Pine delete exists |
 | `pine_analyze` | Offline static analysis (no chart needed) |
 | `pine_check` | Server-side compile check (no chart needed) |
+
+All lifecycle mutations require `placement`, `expected_editor_instance_id`, `expected_model_uri`, `expected_source_sha256`, and exactly one `expected_script_id` or `expected_draft_token`. Open the required placement first (`ui_open_panel pine-editor open` for the bottom editor). Hidden or stale same-placement facades are rejected before mutation, and panel open/close waits for an authoritative runtime result. Production lifecycle operations never use focus-dependent menu or keyboard fallbacks. Runtime-private facade capabilities and orphan/unsupported models are reported explicitly by `pine_list_editor_instances`.
 
 ### Replay Mode
 
@@ -299,8 +306,12 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 
 | Tool | What it does |
 |------|-------------|
-| `draw_shape` | Draw horizontal_line, trend_line, rectangle, text |
-| `draw_list` / `draw_remove_one` / `draw_clear` | Manage drawings |
+| `draw_capabilities` | List all 99 runtime capabilities, arity, routes, and dispositions |
+| `draw_shape` | Create a registry-approved one/two/N-point or anchored drawing |
+| `draw_position` | Native Long/Short Position with entry, stop, target, and horizon |
+| `draw_note` | Exact-loaded-bar text/callout/note/label variants |
+| `draw_list` / `draw_get_properties` / `draw_update` / `draw_remove_one` | Exact-ID lifecycle |
+| `draw_clear` | Destructive legacy remove-all; never use for scoped cleanup |
 | `alert_create` / `alert_list` / `alert_delete` | Manage price alerts |
 | `capture_screenshot` | Screenshot (regions: full, chart, strategy_tester) |
 | `batch_run` | Run action across multiple symbols/timeframes |
@@ -343,7 +354,7 @@ The key flag: `--remote-debugging-port=9222`
 npm test
 ```
 
-29 tests covering: Pine Script static analysis, server-side compilation, and CLI routing.
+The release suite currently contains 301 unit tests across 54 suites and 79 live E2E tests across 14 suites, plus focused isolated drawing and Pine lifecycle acceptance scripts. Live tests require a disposable chart/script and exact-ID cleanup; destructive `draw_clear` is intentionally excluded.
 
 ## Architecture
 
@@ -351,10 +362,10 @@ npm test
 Claude Code  ←→  MCP Server (stdio)  ←→  CDP (port 9222)  ←→  TradingView Desktop (Electron)
 ```
 
-- **Transport**: MCP over stdio (78 tools) + CLI (`tv` command, 30 commands with 66 subcommands)
+- **Transport**: MCP over stdio or Streamable HTTP (86 tools) + CLI (`tv` command)
 - **Connection**: Chrome DevTools Protocol on localhost:9222
 - **Streaming**: Poll-and-diff loop with deduplication, JSONL output to stdout
-- **No dependencies** beyond `@modelcontextprotocol/sdk` and `chrome-remote-interface`
+- **Dependencies**: `@modelcontextprotocol/sdk`, `chrome-remote-interface`, and Express for optional Streamable HTTP
 
 ## Attributions
 

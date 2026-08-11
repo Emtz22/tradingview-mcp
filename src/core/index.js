@@ -8,6 +8,7 @@ export * as pine from './pine.js';
 export * as health from './health.js';
 export * as capture from './capture.js';
 export * as drawing from './drawing.js';
+export * as drawingRegistry from './drawing-registry.js';
 export * as replay from './replay.js';
 export * as alerts from './alerts.js';
 export * as batch from './batch.js';

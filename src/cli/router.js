@@ -33,8 +33,9 @@ function printCommandHelp(name, cmd) {
   if (cmd.subcommands) {
     console.log(`Usage: tv ${name} <subcommand> [options]\n`);
     console.log('Subcommands:');
+    const maxSubcommandLength = Math.max(...[...cmd.subcommands.keys()].map((sub) => sub.length));
     for (const [sub, subConf] of cmd.subcommands) {
-      console.log(`  ${sub.padEnd(12)}${subConf.description}`);
+      console.log(`  ${sub.padEnd(maxSubcommandLength + 2)}${subConf.description}`);
     }
   } else {
     console.log(`Usage: tv ${name} [options]\n`);
@@ -140,11 +141,17 @@ async function execute(handler, values, positionals) {
 
 function handleError(err) {
   const message = err.message || String(err);
+  const payload = {
+    success: false,
+    error: message,
+    error_code: err.code || undefined,
+    details: err.details || undefined,
+  };
   // Connection failures get exit code 2
   if (/CDP|connection|ECONNREFUSED|not running/i.test(message)) {
-    console.error(JSON.stringify({ success: false, error: message }, null, 2));
+    console.error(JSON.stringify(payload, null, 2));
     process.exit(2);
   }
-  console.error(JSON.stringify({ success: false, error: message }, null, 2));
+  console.error(JSON.stringify(payload, null, 2));
   process.exit(1);
 }

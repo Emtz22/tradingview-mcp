@@ -88,7 +88,7 @@ cd ~/tradingview-mcp
 npm link
 ```
 
-Then `tv status`, `tv quote`, `tv pine compile`, etc. work from anywhere.
+Then `tv status`, `tv quote`, `tv pine instances`, etc. work from anywhere.
 
 ## Troubleshooting
 
@@ -100,9 +100,13 @@ Then `tv status`, `tv quote`, `tv pine compile`, etc. work from anywhere.
 | `tv` command not found | Run `npm link` from the project directory |
 | Tools return stale data | TradingView may still be loading — wait a few seconds |
 | Pine Editor tools fail | Open the Pine Editor panel first (`ui_open_panel pine-editor open`) |
+| Pine reads report ambiguous instance | Call `pine_list_editor_instances`, then pass an explicit `placement` to context/source/errors/console |
+| Pine lifecycle mutation refuses | Call `pine_get_context` for that placement; pass its exact instance ID, model URI, source SHA-256, and one saved ID or draft token |
+| Need a new named Pine script | Guarded `pine_new` → guarded `pine_set_source` → guarded `pine_save_as` with a unique name |
+| Need to clean up a disposable script | `pine_delete_script` with its exact ID, exact name, and version; no bulk Pine delete is exposed |
 
 ## What to Read Next
 
 - `CLAUDE.md` — Decision tree for which tool to use when (auto-loaded by Claude Code)
-- `README.md` — Full tool reference (78 MCP tools, 30 CLI commands)
+- `README.md` — Full tool reference (86 MCP tools plus matching CLI surfaces)
 - `RESEARCH.md` — Research context and open questions

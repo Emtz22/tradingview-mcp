@@ -1,10 +1,10 @@
 /**
- * Comprehensive E2E tests for all 70 TradingView MCP tools.
+ * Live E2E acceptance tests for the TradingView MCP runtime surfaces.
  * Requires TradingView Desktop running with --remote-debugging-port=9222
  *
  * Run: node --test tests/e2e.test.js
  *
- * Coverage: 70+ tests across 12 tool modules
+ * Coverage: 79 tests across 14 suites, including:
  * - Health & Connection (4 tools)
  * - Chart Control (8 tools)
  * - Data Access (12 tools)
@@ -22,6 +22,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import CDP from 'chrome-remote-interface';
+import { stop as stopReplay } from '../src/core/replay.js';
 
 let client;
 let Runtime;
@@ -41,9 +42,14 @@ async function evaluate(expr) {
 }
 
 async function apiExists(path) {
-  try {
-    return await evaluate(`(function() { try { return ${path} != null; } catch(e) { return false; } })()`);
-  } catch { return false; }
+  const result = await evaluate(`
+    (function() {
+      try { return { exists: ${path} != null, error: null }; }
+      catch(e) { return { exists: false, error: { code: 'API_PATH_PROBE_FAILED', message: String(e && e.message || e) } }; }
+    })()
+  `);
+  if (result?.error) throw new Error(`${result.error.code}: ${result.error.message}`);
+  return !!result?.exists;
 }
 
 const CHART_API = 'window.TradingViewApi._activeChartWidgetWV.value()';
@@ -59,9 +65,60 @@ function wv(path) {
 /** Sleep for ms */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+async function setBottomWidgetState(widgetName, action) {
+  const result = await evaluate(`
+    (async function() {
+      var bar = ${BOTTOM_BAR};
+      if (!bar) return { error: { code: 'BOTTOM_PANEL_API_UNAVAILABLE', message: 'bottomWidgetBar unavailable' } };
+      try {
+        if (${JSON.stringify(action)} === 'open') {
+          var modeBefore = bar._mode && typeof bar._mode.value === 'function' ? bar._mode.value() : null;
+          if (modeBefore === 'minimized') {
+            if (typeof bar.open !== 'function') return { error: { code: 'BOTTOM_PANEL_OPEN_UNSUPPORTED', message: 'open unavailable for minimized panel' } };
+            await Promise.resolve(bar.open());
+          }
+          if (typeof bar.showWidget !== 'function') return { error: { code: 'BOTTOM_PANEL_OPEN_UNSUPPORTED', message: 'showWidget unavailable' } };
+          await Promise.resolve(bar.showWidget(${JSON.stringify(widgetName)}));
+          var modeAfterOpen = bar._mode && typeof bar._mode.value === 'function' ? bar._mode.value() : null;
+          var activeAfterOpen = bar._activeWidget && typeof bar._activeWidget.value === 'function' ? bar._activeWidget.value() : null;
+          if (modeAfterOpen === 'minimized' || activeAfterOpen !== ${JSON.stringify(widgetName)}) {
+            return { error: { code: 'BOTTOM_PANEL_OPEN_VERIFY_FAILED', message: 'requested widget was not activated', mode_after: modeAfterOpen, active_widget_after: activeAfterOpen } };
+          }
+          return { success: true, action: 'open', route: modeBefore === 'minimized' ? 'open+showWidget' : 'showWidget', mode_after: modeAfterOpen, active_widget_after: activeAfterOpen };
+        }
+        if (typeof bar.close !== 'function') return { error: { code: 'BOTTOM_PANEL_CLOSE_UNSUPPORTED', message: 'close unavailable' } };
+        await Promise.resolve(bar.close());
+        var visible = typeof bar.isVisible === 'function' ? bar.isVisible() : null;
+        visible = visible && typeof visible.value === 'function' ? visible.value() : visible;
+        var mode = bar._mode && typeof bar._mode.value === 'function' ? bar._mode.value() : null;
+        if (mode === null) return { error: { code: 'BOTTOM_PANEL_CLOSE_VERIFY_UNSUPPORTED', message: 'bottomWidgetBar mode state unavailable' } };
+        if (mode !== 'minimized') return { error: { code: 'BOTTOM_PANEL_CLOSE_VERIFY_FAILED', message: 'bottomWidgetBar did not enter minimized mode', mode_after: mode } };
+        return { success: true, action: 'close', route: 'close', visible_after: visible, mode_after: mode };
+      } catch(e) {
+        return { error: { code: 'BOTTOM_PANEL_ACTION_FAILED', message: String(e && e.message || e) } };
+      }
+    })()
+  `);
+  if (result?.error) {
+    const error = new Error(`${result.error.code}: ${result.error.message}`);
+    error.code = result.error.code;
+    error.details = result;
+    throw error;
+  }
+  return result;
+}
+
+async function stopReplayAuthoritatively() {
+  return stopReplay({ _deps: {
+    evaluate,
+    getReplayApi: async () => REPLAY_API,
+    sleep,
+  } });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('TradingView MCP — Full E2E (70 tools)', () => {
+describe('TradingView MCP — broad live E2E', () => {
 
   before(async () => {
     try {
@@ -83,7 +140,13 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
   });
 
   after(async () => {
-    if (client) try { await client.close(); } catch {}
+    if (client) {
+      try {
+        await client.close();
+      } catch (error) {
+        throw new Error(`CDP client teardown failed: ${String(error && error.message || error)}`);
+      }
+    }
   });
 
   // ─── 1. HEALTH & CONNECTION (4 tools) ─────────────────────────────────
@@ -308,23 +371,81 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
 
     it('symbol_search — search dialog scraping', async () => {
       // Open symbol search
-      await evaluate(`
+      const trigger = await evaluate(`
         (function() {
+          var existing = document.querySelector('[data-name="symbol-search-items-dialog"][role="dialog"]');
+          if (existing) {
+            var existingRect = existing.getBoundingClientRect();
+            if (existing.offsetParent && existingRect.width > 0 && existingRect.height > 0) return { already_open: true };
+          }
           var btn = document.querySelector('[aria-label="Change symbol"]')
                  || document.querySelector('[data-name="symbol-button"]');
-          if (btn) btn.click();
+          if (!btn) return null;
+          var rect = btn.getBoundingClientRect();
+          return { already_open: false, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         })()
       `);
-      await sleep(500);
+      assert.ok(trigger, 'Symbol search trigger or existing dialog is available');
+      if (!trigger.already_open) {
+        assert.ok(Number.isFinite(trigger.x) && Number.isFinite(trigger.y), 'Symbol search trigger has trusted pointer coordinates');
+        await Input.dispatchMouseEvent({ type: 'mouseMoved', x: trigger.x, y: trigger.y });
+        await Input.dispatchMouseEvent({ type: 'mousePressed', x: trigger.x, y: trigger.y, button: 'left', clickCount: 1 });
+        await Input.dispatchMouseEvent({ type: 'mouseReleased', x: trigger.x, y: trigger.y, button: 'left', clickCount: 1 });
+      }
+      let visibleSearchInputCount = 0;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        visibleSearchInputCount = await evaluate(`
+          (function() {
+            var root = document.querySelector('[data-name="symbol-search-items-dialog"][role="dialog"]');
+            if (!root) return 0;
+            return Array.from(root.querySelectorAll('input[role="searchbox"]')).filter(function(input) {
+              var rect = input.getBoundingClientRect();
+              return input.offsetParent && rect.width > 0 && rect.height > 0 && !input.closest('.monaco-editor');
+            }).length;
+          })()
+        `);
+        if (visibleSearchInputCount === 1) break;
+        await sleep(100);
+      }
+      assert.equal(visibleSearchInputCount, 1, 'Exactly one visible symbol-search input is scoped to its dialog');
 
-      // Type search query
-      await Input.insertText({ text: 'AAPL' });
+      // Set only a proved visible symbol-search input. Never send text to the
+      // process-global focused element because another Monaco instance may own it.
+      const searchInput = await evaluate(`
+        (function() {
+          var root = document.querySelector('[data-name="symbol-search-items-dialog"][role="dialog"]');
+          var inputs = root ? Array.from(root.querySelectorAll('input[role="searchbox"]')) : [];
+          var visible = inputs.filter(function(input) {
+            var rect = input.getBoundingClientRect();
+            return input.offsetParent && rect.width > 0 && rect.height > 0 && !input.closest('.monaco-editor');
+          });
+          if (visible.length !== 1) {
+            return {
+              success: false,
+              error_code: 'SYMBOL_SEARCH_INPUT_UNAVAILABLE',
+              visible_candidate_count: visible.length
+            };
+          }
+          var input = visible[0];
+          var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          setter.call(input, 'AAPL');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          return {
+            success: true,
+            value: input.value,
+            in_monaco: !!input.closest('.monaco-editor')
+          };
+        })()
+      `);
+      assert.deepEqual(searchInput, { success: true, value: 'AAPL', in_monaco: false });
       await sleep(800);
 
       // Read results
       const results = await evaluate(`
         (function() {
-          var rows = document.querySelectorAll('[data-role="list-item"], .symbolRow-pnIJWxyD, .listRow, [class*="listRow"]');
+          var root = document.querySelector('[data-name="symbol-search-items-dialog"][role="dialog"]');
+          var rows = root ? root.querySelectorAll('[data-role="list-item"], .symbolRow-pnIJWxyD, .listRow, [class*="listRow"]') : [];
           var out = [];
           for (var i = 0; i < Math.min(rows.length, 5); i++) {
             var symbolEl = rows[i].querySelector('[class*="symbolNameText"], [class*="bold"], .highlight-GZaJnFcP')
@@ -335,9 +456,33 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
         })()
       `);
 
-      // Close dialog
-      await Input.dispatchKeyEvent({ type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-      await Input.dispatchKeyEvent({ type: 'keyUp', key: 'Escape', code: 'Escape' });
+      // Close only the symbol-search surface through its own visible close button.
+      const closed = await evaluate(`
+        (function() {
+          var root = document.querySelector('[data-name="symbol-search-items-dialog"][role="dialog"]');
+          var inputs = root ? Array.from(root.querySelectorAll('input[role="searchbox"]')) : [];
+          var input = inputs.find(function(candidate) {
+            var rect = candidate.getBoundingClientRect();
+            return candidate.offsetParent && rect.width > 0 && rect.height > 0 && !candidate.closest('.monaco-editor');
+          });
+          if (!input) return { success: false, error_code: 'SYMBOL_SEARCH_INPUT_LOST' };
+          var close = Array.from(root.querySelectorAll('button')).find(function(button) {
+            var label = (button.getAttribute('aria-label') || button.getAttribute('title') || button.textContent || '').trim();
+            return /^(close menu|close|cancel)$/i.test(label);
+          });
+          if (!close) return { success: false, error_code: 'SYMBOL_SEARCH_CLOSE_UNAVAILABLE' };
+          close.click();
+          return { success: true };
+        })()
+      `);
+      assert.deepEqual(closed, { success: true });
+      let dialogClosed = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        dialogClosed = await evaluate(`!document.querySelector('[data-name="symbol-search-items-dialog"][role="dialog"]')`);
+        if (dialogClosed) break;
+        await sleep(100);
+      }
+      assert.equal(dialogClosed, true, 'Symbol search dialog closed through its scoped control');
 
       assert.ok(Array.isArray(results), 'Results array returned');
       // Results may or may not appear depending on dialog state
@@ -427,7 +572,9 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
               if (Object.keys(vals).length > 0) {
                 results.push({ name: s.metaInfo().description, values: vals });
               }
-            } catch(e) {}
+            } catch(e) {
+              results.push({ diagnostic_error: { code: 'STUDY_VALUES_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()
@@ -449,8 +596,12 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
           var study = ${CHART_API}.getStudyById('${entityId}');
           if (!study) return { error: 'not found' };
           var result = {};
-          try { result.visible = study.isVisible(); } catch(e) {}
-          try { result.inputs = study.getInputValues(); } catch(e) {}
+          try { result.visible = study.isVisible(); } catch(e) {
+            result.visible_error = { code: 'STUDY_VISIBLE_READ_FAILED', message: String(e && e.message || e) };
+          }
+          try { result.inputs = study.getInputValues(); } catch(e) {
+            result.inputs_error = { code: 'STUDY_INPUTS_READ_FAILED', message: String(e && e.message || e) };
+          }
           return result;
         })()
       `);
@@ -477,18 +628,27 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
                 });
                 prices.sort(function(a,b) { return b - a; });
                 var name = '';
-                try { name = s.metaInfo().description; } catch(e) {}
-                results.push({ name: name, horizontal_levels: prices });
+                var nameError = null;
+                try { name = s.metaInfo().description; } catch(e) {
+                  nameError = { code: 'PINE_LINES_NAME_READ_FAILED', message: String(e && e.message || e) };
+                }
+                results.push({ name: name, name_error: nameError, horizontal_levels: prices });
               }
-            } catch(e) {}
+            } catch(e) {
+              results.push({ diagnostic_error: { code: 'PINE_LINES_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()
       `);
       assert.ok(Array.isArray(data), 'Returns array');
-      if (data.length > 0) {
-        assert.ok(data[0].horizontal_levels, 'Has horizontal_levels');
-        assert.ok(Array.isArray(data[0].horizontal_levels), 'Levels is array');
+      for (const row of data) {
+        if (row.diagnostic_error) {
+          assert.equal(row.diagnostic_error.code, 'PINE_LINES_READ_FAILED', 'Retains typed line-read diagnostic');
+          assert.ok(row.diagnostic_error.message, 'Line-read diagnostic has a message');
+        } else {
+          assert.ok(Array.isArray(row.horizontal_levels), 'Line payload has horizontal_levels array');
+        }
       }
     });
 
@@ -509,17 +669,27 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
                 });
                 if (labels.length > 50) labels = labels.slice(-50);
                 var name = '';
-                try { name = s.metaInfo().description; } catch(e) {}
-                results.push({ name: name, labels: labels });
+                var nameError = null;
+                try { name = s.metaInfo().description; } catch(e) {
+                  nameError = { code: 'PINE_LABELS_NAME_READ_FAILED', message: String(e && e.message || e) };
+                }
+                results.push({ name: name, name_error: nameError, labels: labels });
               }
-            } catch(e) {}
+            } catch(e) {
+              results.push({ diagnostic_error: { code: 'PINE_LABELS_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()
       `);
       assert.ok(Array.isArray(data), 'Returns array');
-      if (data.length > 0) {
-        assert.ok(Array.isArray(data[0].labels), 'Has labels array');
+      for (const row of data) {
+        if (row.diagnostic_error) {
+          assert.equal(row.diagnostic_error.code, 'PINE_LABELS_READ_FAILED', 'Retains typed label-read diagnostic');
+          assert.ok(row.diagnostic_error.message, 'Label-read diagnostic has a message');
+        } else {
+          assert.ok(Array.isArray(row.labels), 'Label payload has labels array');
+        }
       }
     });
 
@@ -528,6 +698,7 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
         (function() {
           var sources = ${CHART_API}._chartWidget.model().model().dataSources();
           var found = false;
+          var diagnostics = [];
           for (var i = 0; i < sources.length; i++) {
             var s = sources[i];
             if (!s._graphics || !s._graphics._primitivesCollection) continue;
@@ -537,9 +708,11 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
                 found = true;
                 break;
               }
-            } catch(e) {}
+            } catch(e) {
+              diagnostics.push({ code: 'PINE_TABLES_READ_FAILED', source_index: i, message: String(e && e.message || e) });
+            }
           }
-          return { path_accessible: true, has_data: found };
+          return { path_accessible: true, has_data: found, diagnostics: diagnostics };
         })()
       `);
       assert.ok(data.path_accessible, 'Table cells path accessible');
@@ -563,17 +736,27 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
                   }
                 });
                 var name = '';
-                try { name = s.metaInfo().description; } catch(e) {}
-                results.push({ name: name, zones: zones });
+                var nameError = null;
+                try { name = s.metaInfo().description; } catch(e) {
+                  nameError = { code: 'PINE_BOXES_NAME_READ_FAILED', message: String(e && e.message || e) };
+                }
+                results.push({ name: name, name_error: nameError, zones: zones });
               }
-            } catch(e) {}
+            } catch(e) {
+              results.push({ diagnostic_error: { code: 'PINE_BOXES_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()
       `);
       assert.ok(Array.isArray(data), 'Returns array');
-      if (data.length > 0) {
-        assert.ok(Array.isArray(data[0].zones), 'Has zones array');
+      for (const row of data) {
+        if (row.diagnostic_error) {
+          assert.equal(row.diagnostic_error.code, 'PINE_BOXES_READ_FAILED', 'Retains typed box-read diagnostic');
+          assert.ok(row.diagnostic_error.message, 'Box-read diagnostic has a message');
+        } else {
+          assert.ok(Array.isArray(row.zones), 'Box payload has zones array');
+        }
       }
     });
 
@@ -615,7 +798,7 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
 
     it('data_get_strategy_results — strategy metrics (panel-dependent)', async () => {
       // Open strategy tester panel
-      await evaluate(`try { ${BOTTOM_BAR}.showWidget('backtesting'); } catch(e) {}`);
+      await setBottomWidgetState('backtesting', 'open');
       await sleep(500);
 
       const data = await evaluate(`
@@ -628,29 +811,29 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
       assert.ok(typeof data.panel_found === 'boolean', 'Strategy panel detection works');
 
       // Close it
-      await evaluate(`try { ${BOTTOM_BAR}.hideWidget('backtesting'); } catch(e) {}`);
+      await setBottomWidgetState('backtesting', 'close');
     });
 
     it('data_get_trades — trade list (panel-dependent)', async () => {
       // Similar to strategy_results — verify panel detection
-      await evaluate(`try { ${BOTTOM_BAR}.showWidget('backtesting'); } catch(e) {}`);
+      await setBottomWidgetState('backtesting', 'open');
       await sleep(500);
       const panelExists = await evaluate(`
         !!(document.querySelector('[data-name="backtesting"]') || document.querySelector('[class*="strategyReport"]'))
       `);
       assert.ok(typeof panelExists === 'boolean', 'Panel detection works');
-      await evaluate(`try { ${BOTTOM_BAR}.hideWidget('backtesting'); } catch(e) {}`);
+      await setBottomWidgetState('backtesting', 'close');
     });
 
     it('data_get_equity — equity curve (panel-dependent)', async () => {
       // Same pattern — just verify the panel access path works
-      await evaluate(`try { ${BOTTOM_BAR}.showWidget('backtesting'); } catch(e) {}`);
+      await setBottomWidgetState('backtesting', 'open');
       await sleep(500);
       const panelExists = await evaluate(`
         !!(document.querySelector('[data-name="backtesting"]') || document.querySelector('[class*="strategyReport"]'))
       `);
       assert.ok(typeof panelExists === 'boolean', 'Panel detection works');
-      await evaluate(`try { ${BOTTOM_BAR}.hideWidget('backtesting'); } catch(e) {}`);
+      await setBottomWidgetState('backtesting', 'close');
     });
   });
 
@@ -667,7 +850,7 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
     after(async () => {
       // Restore editor state
       if (!editorWasOpen) {
-        await evaluate(`try { ${BOTTOM_BAR}.hideWidget('pine-editor'); } catch(e) {}`);
+        await setBottomWidgetState('pine-editor', 'close');
         await sleep(300);
       }
     });
@@ -735,24 +918,19 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
       }
     });
 
-    it('pine_set_source — inject code', async () => {
+    it('pine_set_source — selected identity is observable before any write', async () => {
       const ready = await ensureEditor();
       if (!ready) return;
-      const testCode = '//@version=6\nindicator("E2E Test", overlay=true)\nplot(close)';
-      const set = await evaluate(`
+      const identity = await evaluate(`
         (function() {
           var m = ${FIND_MONACO};
-          if (!m) return false;
-          m.editor.setValue(${JSON.stringify(testCode)});
-          return true;
+          var nameNode = Array.from(document.querySelectorAll('div')).find(function(el) {
+            return String(el.className || '').indexOf('nameButton-') !== -1;
+          });
+          return m ? { name: nameNode ? (nameNode.innerText || '').trim() : '', source: m.editor.getValue() } : null;
         })()
       `);
-      if (set) {
-        const readBack = await evaluate(`
-          (function() { var m = ${FIND_MONACO}; return m ? m.editor.getValue() : null; })()
-        `);
-        assert.ok(readBack && readBack.includes('E2E Test'), 'Source was set');
-      }
+      assert.ok(identity && typeof identity.source === 'string', 'Identity/source can be checked before guarded mutation');
     });
 
     it('pine_compile — add to chart button', async () => {
@@ -820,13 +998,11 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
       assert.ok(typeof entries === 'number', 'Console row count returned');
     });
 
-    it('pine_save — Ctrl+S dispatch', async () => {
+    it('pine_save — native Save menu and macOS shortcut are discoverable without dispatch', async () => {
       const ready = await ensureEditor();
       if (!ready) return;
-      // Just verify key dispatch doesn't throw
-      await Input.dispatchKeyEvent({ type: 'keyDown', modifiers: 2, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 });
-      await Input.dispatchKeyEvent({ type: 'keyUp', key: 's', code: 'KeyS' });
-      await sleep(300);
+      const headerExists = await evaluate(`Array.from(document.querySelectorAll('div')).some(function(el) { return String(el.className || '').indexOf('nameButton-') !== -1; })`);
+      assert.ok(headerExists, 'Native Pine identity/menu button exists; save is tested in the guarded focused suite');
     });
 
     it('pine_new — find "New" menu items', async () => {
@@ -924,9 +1100,25 @@ val = array.get(a, 5)`;
 
   describe('Drawing', () => {
 
+    const createdDrawingIds = [];
+
     after(async () => {
-      // Clean up all drawings
-      try { await evaluate(`${CHART_API}.removeAllShapes()`); } catch {}
+      // Remove only IDs created by this test group; preserve all unrelated drawings.
+      const cleanupErrors = [];
+      for (const id of createdDrawingIds) {
+        try {
+          await evaluate(`${CHART_API}.removeEntity(${JSON.stringify(id)})`);
+        } catch (error) {
+          cleanupErrors.push({
+            code: 'DRAWING_EXACT_ID_CLEANUP_FAILED',
+            entity_id: id,
+            message: String(error && error.message || error),
+          });
+        }
+      }
+      const remaining = await evaluate(`${CHART_API}.getAllShapes().filter(function(shape) { return ${JSON.stringify(createdDrawingIds)}.indexOf(shape.id) !== -1; }).map(function(shape) { return shape.id; })`);
+      assert.deepEqual(cleanupErrors, [], `Exact-ID cleanup errors: ${JSON.stringify(cleanupErrors)}`);
+      assert.deepEqual(remaining, [], `Task drawing IDs remain: ${JSON.stringify(remaining)}`);
     });
 
     it('draw_shape — create horizontal line', async () => {
@@ -940,9 +1132,9 @@ val = array.get(a, 5)`;
       if (!quote) return;
 
       const result = await evaluate(`
-        (function() {
+        (async function() {
           var api = ${CHART_API};
-          var id = api.createShape(
+          var id = await api.createShape(
             { time: ${quote.time}, price: ${quote.price} },
             { shape: 'horizontal_line', overrides: {} }
           );
@@ -951,6 +1143,7 @@ val = array.get(a, 5)`;
       `);
       assert.ok(result, 'Shape created');
       assert.ok(result.entity_id, 'Has entity_id');
+      createdDrawingIds.push(result.entity_id);
     });
 
     it('draw_list — list drawings', async () => {
@@ -961,21 +1154,25 @@ val = array.get(a, 5)`;
         })()
       `);
       assert.ok(Array.isArray(shapes), 'Shapes is array');
-      assert.ok(shapes.length > 0, 'Has at least one shape');
+      assert.ok(createdDrawingIds.some((id) => shapes.some((shape) => shape.id === id)), 'Task-created shape is listed');
     });
 
     it('draw_get_properties — read shape details', async () => {
-      const shapes = await evaluate(`${CHART_API}.getAllShapes()`);
-      if (!shapes || shapes.length === 0) return;
+      const id = createdDrawingIds.find(Boolean);
+      if (!id) return;
 
       const result = await evaluate(`
         (function() {
           var api = ${CHART_API};
-          var shape = api.getShapeById('${shapes[0].id}');
+          var shape = api.getShapeById(${JSON.stringify(id)});
           if (!shape) return { error: 'not found' };
           var props = {};
-          try { props.points = shape.getPoints(); } catch(e) {}
-          try { props.visible = shape.isVisible(); } catch(e) {}
+          try { props.points = shape.getPoints(); } catch(e) {
+            props.points_error = { code: 'DRAWING_POINTS_READ_FAILED', message: String(e && e.message || e) };
+          }
+          try { props.visible = shape.isVisible(); } catch(e) {
+            props.visible_error = { code: 'DRAWING_VISIBLE_READ_FAILED', message: String(e && e.message || e) };
+          }
           return props;
         })()
       `);
@@ -984,32 +1181,19 @@ val = array.get(a, 5)`;
     });
 
     it('draw_remove_one — remove single drawing', async () => {
-      const shapes = await evaluate(`${CHART_API}.getAllShapes()`);
-      if (!shapes || shapes.length === 0) return;
-
-      const id = shapes[0].id;
-      await evaluate(`${CHART_API}.removeEntity('${id}')`);
+      const quote = await evaluate(`(function(){ var bars=${BARS_PATH}; var last=bars.valueAt(bars.lastIndex()); return last ? {time:last[0],price:last[4]} : null; })()`);
+      if (!quote) return;
+      const id = await evaluate(`(async function(){ return String(await ${CHART_API}.createShape(${JSON.stringify(quote)}, {shape:'vertical_line'})); })()`);
+      createdDrawingIds.push(id);
+      await evaluate(`${CHART_API}.removeEntity(${JSON.stringify(id)})`);
       const after = await evaluate(`${CHART_API}.getAllShapes()`);
       const stillExists = after.some(s => s.id === id);
       assert.ok(!stillExists, 'Shape removed');
+      createdDrawingIds.splice(createdDrawingIds.indexOf(id), 1);
     });
 
-    it('draw_clear — remove all drawings', async () => {
-      // Add a shape first
-      const quote = await evaluate(`
-        (function() {
-          var bars = ${BARS_PATH};
-          var last = bars.valueAt(bars.lastIndex());
-          return last ? { time: last[0], price: last[4] } : null;
-        })()
-      `);
-      if (quote) {
-        await evaluate(`${CHART_API}.createShape({ time: ${quote.time}, price: ${quote.price} }, { shape: 'horizontal_line' })`);
-      }
-
-      await evaluate(`${CHART_API}.removeAllShapes()`);
-      const after = await evaluate(`${CHART_API}.getAllShapes()`);
-      assert.equal(after.length, 0, 'All shapes cleared');
+    it('draw_clear — destructive legacy route is intentionally not exercised', () => {
+      assert.ok(true, 'Scoped E2E cleanup uses exact task-created IDs only');
     });
   });
 
@@ -1034,15 +1218,19 @@ val = array.get(a, 5)`;
       assert.ok(bwb, 'bottomWidgetBar exists');
 
       // Open
-      await evaluate(`${BOTTOM_BAR}.showWidget('pine-editor')`);
+      const opened = await setBottomWidgetState('scripteditor', 'open');
       await sleep(500);
       const isOpen = await evaluate(`!!document.querySelector('.monaco-editor.pine-editor-monaco')`);
 
       // Close
-      await evaluate(`${BOTTOM_BAR}.hideWidget('pine-editor')`);
+      const closed = await setBottomWidgetState('scripteditor', 'close');
       await sleep(300);
 
-      assert.ok(typeof isOpen === 'boolean', 'Panel toggle works');
+      assert.match(opened.route, /showWidget$/, 'Panel opens through the supported showWidget route');
+      assert.equal(opened.active_widget_after, 'scripteditor', 'Pine widget is authoritative active widget');
+      assert.equal(isOpen, true, 'Pine editor opened');
+      assert.equal(closed.route, 'close', 'Panel closes through the supported bottomWidgetBar.close route');
+      assert.equal(closed.mode_after, 'minimized', 'Bottom panel reports authoritative minimized mode');
     });
 
     it('ui_fullscreen — find fullscreen button', async () => {
@@ -1153,16 +1341,8 @@ val = array.get(a, 5)`;
 
     after(async () => {
       // Ensure replay is stopped
-      try {
-        const rp = REPLAY_API;
-        const started = await evaluate(wv(`${rp}.isReplayStarted()`));
-        if (started) {
-          await evaluate(`${rp}.stopReplay()`);
-          await evaluate(`${rp}.goToRealtime()`);
-          await evaluate(`${rp}.hideReplayToolbar()`);
-          await sleep(500);
-        }
-      } catch {}
+      const result = await stopReplayAuthoritatively();
+      assert.equal(result.state?.is_replay_started, false, `Replay teardown did not reach realtime: ${JSON.stringify(result)}`);
     });
 
     it('replay_start — enter replay mode', async () => {
@@ -1212,7 +1392,7 @@ val = array.get(a, 5)`;
       assert.ok(position !== undefined, 'Position returned after buy');
 
       // Close position
-      try { await evaluate(`${REPLAY_API}.closePosition()`); } catch {}
+      await evaluate(`${REPLAY_API}.closePosition()`);
     });
 
     it('replay_status — get replay state', async () => {
@@ -1234,13 +1414,9 @@ val = array.get(a, 5)`;
       const started = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
       if (!started) return;
 
-      await evaluate(`${REPLAY_API}.stopReplay()`);
-      await evaluate(`${REPLAY_API}.goToRealtime()`);
-      await evaluate(`${REPLAY_API}.hideReplayToolbar()`);
-      await sleep(500);
-
-      const stoppedNow = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
-      assert.ok(!stoppedNow, 'Replay stopped');
+      const result = await stopReplayAuthoritatively();
+      assert.equal(result.state?.is_replay_started, false, `Replay stopped/realtime state not authoritative: ${JSON.stringify(result)}`);
+      assert.equal(result.state?.current_date, null, `Replay current date was not cleared: ${JSON.stringify(result)}`);
     });
   });
 
@@ -1441,7 +1617,9 @@ val = array.get(a, 5)`;
             result.low = last[3]; result.close = last[4]; result.volume = last[5] || 0;
           }
           var ext = {};
-          try { ext = ${CHART_API}.symbolExt(); } catch(e) {}
+          try { ext = ${CHART_API}.symbolExt(); } catch(e) {
+            result.symbol_ext_error = { code: 'SYMBOL_EXT_READ_FAILED', message: String(e && e.message || e) };
+          }
           if (ext.description) result.description = ext.description;
           if (ext.exchange) result.exchange = ext.exchange;
           return result;
@@ -1473,7 +1651,9 @@ val = array.get(a, 5)`;
               if (Object.keys(vals).length > 0) {
                 results.push({ name: s.metaInfo().description, values: vals });
               }
-            } catch(e) {}
+            } catch(e) {
+              results.push({ diagnostic_error: { code: 'COMPACT_STUDY_VALUES_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()
@@ -1501,7 +1681,9 @@ val = array.get(a, 5)`;
               });
               prices.sort(function(a,b) { return b - a; });
               results.push({ name: name, horizontal_levels: prices });
-            } catch(e) {}
+            } catch(e) {
+              results.push({ name: '', diagnostic_error: { code: 'COMPACT_PINE_LINES_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()
@@ -1530,7 +1712,9 @@ val = array.get(a, 5)`;
               });
               if (labels.length > 50) labels = labels.slice(-50);
               results.push({ name: name, labels: labels });
-            } catch(e) {}
+            } catch(e) {
+              results.push({ name: '', diagnostic_error: { code: 'COMPACT_PINE_LABELS_READ_FAILED', source_index: i, message: String(e && e.message || e) } });
+            }
           }
           return results;
         })()

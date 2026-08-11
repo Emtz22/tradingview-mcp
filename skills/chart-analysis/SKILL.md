@@ -36,9 +36,11 @@ After adding, use `indicator_set_inputs` to customize settings (e.g., change EMA
 ## Step 4: Annotate
 
 Use drawing tools to mark up the chart:
+- Call `draw_capabilities` when you need a tool beyond the common examples; obey its exact arity.
 - `draw_shape` with `horizontal_line` for support/resistance
 - `draw_shape` with `trend_line` for trend channels (needs two points)
-- `draw_shape` with `text` for annotations
+- `draw_note` for exact-bar text/callout annotations
+- `draw_position` for planned trades; always provide entry, stop, target, and time horizon. Never synthesize a planned trade from standalone lines.
 
 ## Step 5: Capture and Analyze
 
@@ -55,8 +57,12 @@ Provide the analysis:
 - Indicator readings (RSI overbought/oversold, MACD crossover, etc.)
 - Overall bias (bullish/bearish/neutral) with reasoning
 
+## Pine editor safety
+
+When analysis requires a Pine edit, call `pine_list_editor_instances` and select one placement before reading context. Every lifecycle mutation must reuse that context's exact `editor_instance_id`, `model_uri`, source SHA-256, and exactly one saved-script ID or draft token. Use `pine_delete_script` only with the exact disposable ID/name/version; there is no bulk Pine cleanup. Treat orphan Monaco models and unavailable facade methods as explicit unsupported capability evidence.
+
 ## Cleanup
 
-If you added indicators the user didn't ask for, remove them:
+If you added indicators or drawings the user didn't ask for, remove only those task-created entities:
 - `chart_manage_indicator` with action "remove" and the entity_id
-- `draw_clear` to remove all drawings if they were temporary
+- `draw_remove_one` for each exact task-created drawing ID. Never use `draw_clear` for scoped cleanup.

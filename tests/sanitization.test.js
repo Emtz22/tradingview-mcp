@@ -233,11 +233,11 @@ describe('drawing.js — sanitized evaluate calls', () => {
     const { _deps } = mockDeps();
     await assert.rejects(
       () => drawShape({ shape: 'horizontal_line', point: { time: NaN, price: 100 }, _deps }),
-      /point\.time must be a finite number/,
+      /points\[0\]\.time must be a finite number/,
     );
     await assert.rejects(
       () => drawShape({ shape: 'horizontal_line', point: { time: 100, price: Infinity }, _deps }),
-      /point\.price must be a finite number/,
+      /points\[0\]\.price must be a finite number/,
     );
   });
 
@@ -250,35 +250,38 @@ describe('drawing.js — sanitized evaluate calls', () => {
         point2: { time: NaN, price: 60 },
         _deps,
       }),
-      /point2\.time must be a finite number/,
+      /points\[1\]\.time must be a finite number/,
     );
   });
 
   it('drawShape uses safeString for shape name', async () => {
-    const { _deps, evaluate } = mockDeps();
+    const calls = [];
+    const { _deps } = mockDeps({ evaluateAsync: async (expr) => { calls.push(expr); return 'shape-id'; } });
     await drawShape({ shape: 'horizontal_line', point: { time: 100, price: 50 }, _deps });
-    const call = evaluate.calls.find(c => c.includes('createShape'));
+    const call = calls.find(c => c.includes('createShape'));
     assert.ok(call, 'createShape called');
     assert.ok(call.includes('"horizontal_line"'), 'shape name via safeString');
   });
 
   it('drawShape uses validated coordinates in evaluate', async () => {
-    const { _deps, evaluate } = mockDeps();
+    const calls = [];
+    const { _deps } = mockDeps({ evaluateAsync: async (expr) => { calls.push(expr); return 'shape-id'; } });
     await drawShape({ shape: 'horizontal_line', point: { time: 1700000000, price: 5000.50 }, _deps });
-    const call = evaluate.calls.find(c => c.includes('createShape'));
+    const call = calls.find(c => c.includes('createShape'));
     assert.ok(call.includes('1700000000'), 'time in call');
     assert.ok(call.includes('5000.5'), 'price in call');
   });
 
   it('drawShape multipoint uses safeString and requireFinite', async () => {
-    const { _deps, evaluate } = mockDeps();
+    const calls = [];
+    const { _deps } = mockDeps({ evaluateAsync: async (expr) => { calls.push(expr); return 'shape-id'; } });
     await drawShape({
       shape: 'trend_line',
       point: { time: 100, price: 50 },
       point2: { time: 200, price: 60 },
       _deps,
     });
-    const call = evaluate.calls.find(c => c.includes('createMultipointShape'));
+    const call = calls.find(c => c.includes('createMultipointShape'));
     assert.ok(call, 'createMultipointShape called');
     assert.ok(call.includes('"trend_line"'), 'shape name via safeString');
   });

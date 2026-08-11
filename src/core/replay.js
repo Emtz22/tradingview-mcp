@@ -13,7 +13,23 @@ function _resolve(deps) {
   return {
     evaluate: deps?.evaluate || _evaluate,
     getReplayApi: deps?.getReplayApi || _getReplayApi,
+    sleep: deps?.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
   };
+}
+
+async function readReplayState(evaluate, rp) {
+  return evaluate(`
+    (function() {
+      var replay = ${rp};
+      function unwrap(value) { return value && typeof value.value === 'function' ? value.value() : value; }
+      return {
+        is_replay_started: !!unwrap(replay.isReplayStarted()),
+        replay_mode: unwrap(replay.replayMode()),
+        current_date: unwrap(replay.currentDate()),
+        toolbar_visible: typeof replay.isReplayToolbarVisible === 'function' ? !!unwrap(replay.isReplayToolbarVisible()) : null
+      };
+    })()
+  `);
 }
 
 export async function start({ date, _deps } = {}) {
@@ -49,8 +65,14 @@ export async function start({ date, _deps } = {}) {
   }
 
   if (!started) {
-    try { await evaluate(`${rp}.stopReplay()`); } catch {}
-    throw new Error('Replay failed to start. The selected date may not have data for this timeframe. Try a more recent date or a higher timeframe (e.g., Daily).');
+    let cleanupError = null;
+    try {
+      await evaluate(`${rp}.stopReplay()`);
+    } catch (error) {
+      cleanupError = String(error && error.message || error);
+    }
+    const suffix = cleanupError ? ` Cleanup also failed: ${cleanupError}` : '';
+    throw new Error(`Replay failed to start. The selected date may not have data for this timeframe. Try a more recent date or a higher timeframe (e.g., Daily).${suffix}`);
   }
 
   return { success: true, replay_started: true, date: date || '(first available)', current_date: currentDate };
@@ -93,14 +115,73 @@ export async function autoplay({ speed, _deps } = {}) {
 }
 
 export async function stop({ _deps } = {}) {
-  const { evaluate, getReplayApi } = _resolve(_deps);
+  const { evaluate, getReplayApi, sleep } = _resolve(_deps);
   const rp = await getReplayApi();
-  const started = await evaluate(wv(`${rp}.isReplayStarted()`));
-  if (!started) {
-    return { success: true, action: 'already_stopped' };
+  const before = await readReplayState(evaluate, rp);
+  if (!before.is_replay_started) {
+    return { success: true, action: 'already_stopped', state: before };
   }
-  await evaluate(`${rp}.stopReplay()`);
-  return { success: true, action: 'replay_stopped' };
+
+  const dispatch = await evaluate(`
+    (async function() {
+      var replay = ${rp};
+      if (typeof replay.leaveReplay !== 'function') {
+        return { error: { code: 'REPLAY_LEAVE_UNSUPPORTED', message: 'leaveReplay is unavailable' } };
+      }
+      try {
+        await Promise.resolve(replay.leaveReplay({ skipConfirm: true }));
+        return { dispatched: true, route: 'leaveReplay(skipConfirm)' };
+      } catch(e) {
+        return { error: { code: 'REPLAY_LEAVE_FAILED', message: String(e && e.message || e) } };
+      }
+    })()
+  `);
+
+  let after = before;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    after = await readReplayState(evaluate, rp);
+    if (!after.is_replay_started) {
+      return { success: true, action: 'replay_stopped', route: dispatch?.route || 'leaveReplay(skipConfirm)', before, state: after };
+    }
+    await sleep(150);
+  }
+
+  const fallback = await evaluate(`
+    (function() {
+      var replay = ${rp};
+      var controller = replay && replay._replayUIController;
+      var manager = controller && controller._replayManager;
+      if (!controller || typeof controller._forceStopReplay !== 'function') {
+        return { error: { code: 'REPLAY_FORCE_STOP_UNSUPPORTED', message: '_forceStopReplay is unavailable' } };
+      }
+      if (manager && manager._isReplayStopping === true) {
+        return { error: { code: 'REPLAY_STOP_RUNTIME_STUCK', message: 'Replay manager is already stuck in a stopping state' } };
+      }
+      try {
+        controller._forceStopReplay();
+        return { dispatched: true, route: '_forceStopReplay' };
+      } catch(e) {
+        return { error: { code: 'REPLAY_FORCE_STOP_FAILED', message: String(e && e.message || e) } };
+      }
+    })()
+  `);
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    after = await readReplayState(evaluate, rp);
+    if (!after.is_replay_started) {
+      return { success: true, action: 'replay_stopped', route: fallback?.route || '_forceStopReplay', before, state: after };
+    }
+    await sleep(150);
+  }
+
+  const evidence = fallback?.error || dispatch?.error || {
+    code: 'REPLAY_STOP_TIMEOUT',
+    message: 'Replay remained active after authoritative stop routes',
+  };
+  const error = new Error(`${evidence.message}; before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
+  error.code = evidence.code;
+  error.details = { before, after, dispatch, fallback };
+  throw error;
 }
 
 export async function trade({ action, _deps }) {

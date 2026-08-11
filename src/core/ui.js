@@ -28,35 +28,94 @@ export async function click({ by, value }) {
   return { success: true, clicked: result };
 }
 
-export async function openPanel({ panel, action }) {
+export async function openPanel({ panel, action, _deps } = {}) {
+  const runEvaluate = _deps?.evaluate || evaluate;
+  const runEvaluateAsync = _deps?.evaluateAsync || evaluateAsync;
   const isBottomPanel = panel === 'pine-editor' || panel === 'strategy-tester';
   if (isBottomPanel) {
-    const widgetName = panel === 'pine-editor' ? 'pine-editor' : 'backtesting';
-    const result = await evaluate(`
-      (function() {
+    const widgetName = panel === 'pine-editor' ? 'scripteditor' : 'backtesting';
+    const result = await runEvaluateAsync(`
+      (async function() {
         var bwb = window.TradingView && window.TradingView.bottomWidgetBar;
-        if (!bwb) return { error: 'bottomWidgetBar not available' };
+        if (!bwb) return { error: { code: 'BOTTOM_PANEL_API_UNAVAILABLE', message: 'bottomWidgetBar not available' } };
         var panel = ${JSON.stringify(panel)};
         var widgetName = ${JSON.stringify(widgetName)};
         var action = ${JSON.stringify(action)};
+        function unwrap(value) { return value && typeof value.value === 'function' ? value.value() : value; }
         var bottomArea = document.querySelector('[class*="layout__area--bottom"]');
         var isOpen = !!(bottomArea && bottomArea.offsetHeight > 50);
         if (panel === 'pine-editor') { var monacoEl = document.querySelector('.monaco-editor.pine-editor-monaco'); isOpen = isOpen && !!monacoEl; }
         if (panel === 'strategy-tester') { var stratPanel = document.querySelector('[data-name="backtesting"]') || document.querySelector('[class*="strategyReport"]'); isOpen = isOpen && !!(stratPanel && stratPanel.offsetParent); }
         var performed = 'none';
+        var route = 'none';
         if (action === 'open' || (action === 'toggle' && !isOpen)) {
-          if (panel === 'pine-editor') { if (typeof bwb.activateScriptEditorTab === 'function') bwb.activateScriptEditorTab(); else if (typeof bwb.showWidget === 'function') bwb.showWidget(widgetName); }
-          else { if (typeof bwb.showWidget === 'function') bwb.showWidget(widgetName); }
+          var modeBefore = bwb._mode ? unwrap(bwb._mode) : null;
+          if (modeBefore === 'minimized') {
+            if (typeof bwb.open !== 'function') {
+              return { error: { code: 'BOTTOM_PANEL_OPEN_UNSUPPORTED', message: 'bottomWidgetBar.open is unavailable for a minimized panel' } };
+            }
+            await Promise.resolve(bwb.open());
+            route = 'open';
+          }
+          if (typeof bwb.showWidget === 'function') {
+            await Promise.resolve(bwb.showWidget(widgetName));
+            route = route === 'open' ? 'open+showWidget' : 'showWidget';
+          } else if (panel === 'pine-editor' && typeof bwb.activateScriptEditorTab === 'function') {
+            await Promise.resolve(bwb.activateScriptEditorTab());
+            route = route === 'open' ? 'open+activateScriptEditorTab' : 'activateScriptEditorTab';
+          } else {
+            return { error: { code: 'BOTTOM_PANEL_OPEN_UNSUPPORTED', message: 'No supported bottom-panel open method is available' } };
+          }
           performed = 'opened';
         } else if (action === 'close' || (action === 'toggle' && isOpen)) {
-          if (typeof bwb.hideWidget === 'function') bwb.hideWidget(widgetName);
-          performed = 'closed';
+          if (!isOpen) {
+            performed = 'already_closed';
+          } else if (typeof bwb.close === 'function') {
+            await Promise.resolve(bwb.close());
+            route = 'close';
+            performed = 'closed';
+          } else {
+            return { error: { code: 'BOTTOM_PANEL_CLOSE_UNSUPPORTED', message: 'bottomWidgetBar.close is unavailable' } };
+          }
         }
-        return { was_open: isOpen, performed: performed };
+        var visibleAfter = typeof bwb.isVisible === 'function' ? !!unwrap(bwb.isVisible()) : null;
+        var modeAfter = bwb._mode ? unwrap(bwb._mode) : null;
+        var activeWidgetAfter = bwb._activeWidget ? unwrap(bwb._activeWidget) : null;
+        if (performed === 'opened' && (modeAfter === 'minimized' || activeWidgetAfter !== widgetName)) {
+          return { error: { code: 'BOTTOM_PANEL_OPEN_VERIFY_FAILED', message: 'bottomWidgetBar did not activate the requested widget' }, was_open: isOpen, route: route, visible_after: visibleAfter, mode_after: modeAfter, active_widget_after: activeWidgetAfter };
+        }
+        if ((performed === 'closed' || performed === 'already_closed') && modeAfter === null) {
+          return { error: { code: 'BOTTOM_PANEL_CLOSE_VERIFY_UNSUPPORTED', message: 'bottomWidgetBar mode state is unavailable' }, was_open: isOpen, route: route, visible_after: visibleAfter };
+        }
+        if ((performed === 'closed' || performed === 'already_closed') && modeAfter !== 'minimized') {
+          return { error: { code: 'BOTTOM_PANEL_CLOSE_VERIFY_FAILED', message: 'bottomWidgetBar did not enter minimized mode after close' }, was_open: isOpen, route: route, visible_after: visibleAfter, mode_after: modeAfter };
+        }
+        return { was_open: isOpen, performed: performed, route: route, visible_after: visibleAfter, mode_after: modeAfter, active_widget_after: activeWidgetAfter };
       })()
     `);
-    if (result && result.error) throw new Error(result.error);
-    return { success: true, panel, action, was_open: result?.was_open ?? false, performed: result?.performed ?? 'unknown' };
+    if (!result || typeof result !== 'object') {
+      const error = new Error('Bottom-panel runtime returned no authoritative result');
+      error.code = 'BOTTOM_PANEL_INVALID_RESULT';
+      error.details = { panel, action, result: result ?? null };
+      throw error;
+    }
+    if (result.error) {
+      const error = new Error(result.error.message || String(result.error));
+      error.code = result.error.code || 'BOTTOM_PANEL_ACTION_FAILED';
+      error.details = result;
+      throw error;
+    }
+    return {
+      success: true,
+      panel,
+      action,
+      was_open: result.was_open,
+      performed: result.performed,
+      route: result.route,
+      visible_after: result.visible_after,
+      mode_after: result.mode_after,
+      active_widget_after: result.active_widget_after,
+    };
   } else {
     const selectorMap = {
       'watchlist': { dataName: 'base-watchlist-widget-button', ariaLabel: 'Watchlist' },
@@ -64,7 +123,7 @@ export async function openPanel({ panel, action }) {
       'trading': { dataName: 'trading-button', ariaLabel: 'Trading Panel' },
     };
     const sel = selectorMap[panel];
-    const result = await evaluate(`
+    const result = await runEvaluate(`
       (function() {
         var dataName = ${JSON.stringify(sel.dataName)};
         var ariaLabel = ${JSON.stringify(sel.ariaLabel)};
