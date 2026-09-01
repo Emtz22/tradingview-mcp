@@ -1,0 +1,23 @@
+name: Isolated Public Research Runner
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public compute and Binance data access
+        run: |
+          python - <<'PY'
+          import urllib.request
+          assert urllib.request.urlopen('https://data.binance.vision', timeout=30).status == 200
+          print('PUBLIC_COMPUTE_OK')
+          PY
