@@ -1,0 +1,23 @@
+name: Public Compute Smoke
+
+on:
+  push:
+    branches:
+      - agent/public-wick-sfp-benchmark-20260901
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python --version
+          python - <<'PY'
+          import urllib.request
+          print(urllib.request.urlopen('https://data.binance.vision', timeout=30).status)
+          print('PUBLIC_COMPUTE_OK')
+          PY
