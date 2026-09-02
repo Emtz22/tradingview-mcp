@@ -1,0 +1,31 @@
+name: Temporary H5 Pareto Phase 0
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  H5_DRIVE_FILE_ID: 1iDyNtvi9FF8ACMHaNb_bnlkrvW1NVIly
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect H5 handoff
+        run: python tools/tmp_h5_phase0.py
+      - name: Upload phase-0 reconstruction
+        uses: actions/upload-artifact@v4
+        with:
+          name: h5-pareto-phase0
+          path: .tmp-h5-pareto/output
+          if-no-files-found: error
+          retention-days: 3
