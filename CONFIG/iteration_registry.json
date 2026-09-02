@@ -1,0 +1,172 @@
+{
+  "schema_version": "h5-iteration-registry-v2",
+  "registry_status": "FROZEN_FOR_NEXT_COHORT",
+  "live_trading_allowed": false,
+  "source_boundary": "Latest 22:15 WIB archive awaits file-level recomputation; registry uses prior readable evidence plus decision-complete research constraints.",
+  "stages": [
+    {
+      "stage_id": "A_MECHANISM_FACTORIAL",
+      "purpose": "Separate stop geometry from conditional time management under equal initial cash risk.",
+      "shared_contract": {
+        "candidate_stream": "identical point-in-time candidates",
+        "cash_risk_per_trade": "fixed",
+        "cost_model": "identical",
+        "latency_model": "identical",
+        "same_bar_rule": "stop_first",
+        "terminal_horizon": "identical",
+        "capacity": 1
+      },
+      "arms": [
+        {
+          "arm_id": "F0_V0_RISK_PARITY_CONTROL",
+          "parent": "V0",
+          "stop_rule": "V0_FROZEN",
+          "time_rule": "V0_FROZEN",
+          "changes_from_parent": []
+        },
+        {
+          "arm_id": "F1_V2_RISK_PARITY",
+          "parent": "V0",
+          "stop_rule": "V2_FROZEN",
+          "time_rule": "V0_FROZEN",
+          "changes_from_parent": ["stop_geometry_only", "position_size_adjusted_to_equal_cash_risk"]
+        },
+        {
+          "arm_id": "F2_V3_TIME_CONDITIONAL",
+          "parent": "V0",
+          "stop_rule": "V0_FROZEN",
+          "time_rule": "V3_45M_CONDITIONAL_THESIS_DECAY",
+          "changes_from_parent": ["time_management_only"]
+        },
+        {
+          "arm_id": "F3_V2_X_V3",
+          "parent": "F1_V2_RISK_PARITY",
+          "stop_rule": "V2_FROZEN",
+          "time_rule": "V3_45M_CONDITIONAL_THESIS_DECAY",
+          "changes_from_parent": ["time_management_only"]
+        }
+      ],
+      "primary_comparisons": [
+        "F1-F0 stop main effect",
+        "F2-F0 time main effect",
+        "F3-F1 time effect under V2 stop",
+        "F3-F2 stop effect under V3 time",
+        "factor interaction"
+      ],
+      "advance_rule": "Retain Model Confidence Set members; choose simplest robust frontier arm after registered epsilon and stress checks."
+    },
+    {
+      "stage_id": "B_SELECTION",
+      "purpose": "Test candidate substitution without changing entry management, risk, or capacity.",
+      "parent_selection": "simplest retained Stage A arm",
+      "shared_contract": {
+        "candidate_book": "decision_complete",
+        "capacity": 1,
+        "risk": "fixed total risk",
+        "management": "frozen Stage A winner",
+        "hard_economic_constraints": "identical"
+      },
+      "arms": [
+        {
+          "arm_id": "S0_ABSOLUTE_ORDER_CONTROL",
+          "ranking": "frozen current ranking"
+        },
+        {
+          "arm_id": "S1_C1_FEATURE_RANK_ONLY",
+          "ranking": "control ranking with Fastlab C1 measurement as deterministic tie-break only",
+          "forbidden": ["C1 hard rejection", "adjacent threshold search"]
+        },
+        {
+          "arm_id": "S2_RELATIVE_SLATE_S1O",
+          "ranking": "lexicographic within-cycle short slate",
+          "fields": [
+            "short_active_market_state",
+            "fresh_1h_supply_first_sweep",
+            "closed_bearish_proof",
+            "residual_weakness_vs_btc_and_breadth",
+            "cost_r_and_target_room",
+            "causal_symbol_cluster_memory_rank_only",
+            "quote_liquidity_and_freshness",
+            "deterministic_symbol_tie_break"
+          ]
+        },
+        {
+          "arm_id": "S3_CONTEXTUAL_S1O_DIAGNOSTIC",
+          "ranking": "S2 plus registered fresh-1H-supply and BTC-alignment diagnostic strata",
+          "status": "EXPLORATORY_UNTIL_FORWARD_SUPPORT"
+        }
+      ],
+      "primary_metrics": [
+        "paired_policy_delta_r",
+        "selection_substitution_delta_r",
+        "missed_winner_rate",
+        "refill_net_contribution_r",
+        "rank_decile_monotonicity",
+        "expectancy_lcb95_r"
+      ],
+      "advance_rule": "A challenger must improve substitution value on common support, not merely reduce trade count."
+    },
+    {
+      "stage_id": "C_CAPACITY",
+      "purpose": "Measure incremental slot value without adding total risk.",
+      "parent_selection": "simplest retained Stage B arm",
+      "arms": [
+        {
+          "arm_id": "C0_ONE_SLOT_100",
+          "slots": [{"slot": 1, "risk_share": 1.0}]
+        },
+        {
+          "arm_id": "C1_TWO_SLOT_50_50",
+          "slots": [{"slot": 1, "risk_share": 0.5}, {"slot": 2, "risk_share": 0.5}],
+          "slot2_constraints": ["distinct correlation cluster", "distinct shared event", "no same symbol", "same hard economics"]
+        },
+        {
+          "arm_id": "C2_ONE_SLOT_PLUS_COUNTERFACTUAL",
+          "slots": [{"slot": 1, "risk_share": 1.0}, {"slot": 2, "risk_share": 0.0, "counterfactual_only": true}]
+        }
+      ],
+      "primary_metrics": [
+        "slot2_incremental_stressed_r",
+        "capacity_drawdown_delta_r",
+        "cluster_duplication_rate",
+        "turnover_per_incremental_r",
+        "return_per_margin_hour"
+      ],
+      "advance_rule": "Two-slot survives only with positive stressed slot-2 contribution and no material tail or concentration regression."
+    },
+    {
+      "stage_id": "D_EXECUTION_TWINS",
+      "purpose": "Explain replay-to-paper decay on every on-time accepted setup.",
+      "records": [
+        "decision_twin",
+        "fill_twin",
+        "paper_trade"
+      ],
+      "decomposition": {
+        "selection_result": "decision_twin_net_r",
+        "entry_execution_drag": "decision_twin_net_r - fill_twin_net_r",
+        "management_drag": "fill_twin_net_r - paper_trade_net_r"
+      },
+      "advance_rule": "No promotion while twin match rate is below 99% or unexplained drag materially changes the frontier."
+    }
+  ],
+  "frozen_variant_actions": {
+    "V0": "KEEP_IMMUTABLE_CONTROL",
+    "V2": "PRIMARY_MECHANISM_PENDING_EQUAL_RISK",
+    "V3": "MANAGEMENT_FACTOR_ONLY",
+    "V7": "CAPACITY_FACTOR_ONLY",
+    "FASTLAB_C1": "FREEZE_HARD_GATE_USE_FEATURE_RANK_ONLY",
+    "V8_V11": "KEEP_FROZEN_NO_DESCENDANT_WITHOUT_EXACT_RULE_HASH_AND_SUPPORT"
+  },
+  "early_looks": [
+    {
+      "matured_clustered_decisions": 30,
+      "reject_if": "paired_delta <= -0.05R per decision and one-sided p <= 0.005"
+    },
+    {
+      "matured_clustered_decisions": 50,
+      "reject_if": "one-sided p <= 0.045 against superiority",
+      "futility_if": "upper 90% cluster-bootstrap bound < +0.03R per decision"
+    }
+  ]
+}

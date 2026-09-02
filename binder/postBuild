@@ -1,4 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-export H5_DRIVE_FILE_ID="1iDyNtvi9FF8ACMHaNb_bnlkrvW1NVIly"
-python tools/tmp_h5_phase0.py

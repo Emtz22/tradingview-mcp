@@ -1,0 +1,43 @@
+{
+  "schema": "h5-source-boundary-v1",
+  "prepared_at": "2026-09-02T23:00:00+07:00",
+  "timezone": "Asia/Jakarta",
+  "requested_source": {
+    "name": "H5_GPT_PRO_HANDOFF_2026-09-02_221545WIB.zip",
+    "conversation_file_id": "file_000000005b4481fabe5f9a1a64fd4d9e",
+    "observed_local_path": "/mnt/data/H5_GPT_PRO_HANDOFF_2026-09-02_221545WIB.zip",
+    "observed_size_bytes": 44580503,
+    "status": "PENDING_ARCHIVE_RECOMPUTE",
+    "reason": "The active local execution service returned a ClientError before even trivial filesystem or Python execution, so the archive could not be decompressed or row-level metrics recomputed in this run.",
+    "numeric_claims_from_payload": "NONE"
+  },
+  "last_independently_readable_quantitative_boundary": {
+    "name": "H5_GPT_PRO_HANDOFF_2026-09-02_0922WIB_UPLOAD.zip",
+    "status": "PRIOR_READABLE_HANDOFF",
+    "use": "prioritization and experiment design only",
+    "promotion_authority": false,
+    "metrics_file": "DATA/last_readable_metrics.csv"
+  },
+  "supporting_indexed_research": [
+    "05_PARETO_BREAKTHROUGH_DESIGN.md",
+    "FLORENS_DECISION_COMPLETE_FORWARD_SHADOW_SPEC.md",
+    "FLORENS_DECISION_COMPLETE_BREAKTHROUGH_REPORT_20260823.md",
+    "BREAKTHROUGH_REPORT.md",
+    "EXECUTOR_PROVENANCE_REPLAY_REPORT.md",
+    "retrospective_context_cells.csv"
+  ],
+  "claim_classes": {
+    "latest_archive_row_metrics": "NOT_CLAIMED",
+    "prior_readable_cohort_metrics": "CLAIMED_WITH_BOUNDARY",
+    "methodological_design": "COMPLETED",
+    "successor_experiment_registry": "COMPLETED",
+    "executable_analysis_code": "INCLUDED_NOT_EXECUTED_IN_FAILED_RUNTIME",
+    "live_promotion": "DENIED"
+  },
+  "safety": {
+    "live_orders": false,
+    "exchange_writes": false,
+    "credentials_in_bundle": false,
+    "raw_latest_archive_in_bundle": false
+  }
+}

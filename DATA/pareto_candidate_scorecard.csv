@@ -1,0 +1,12 @@
+priority,stage,arm_or_factor,parent,change_isolated,primary_pareto_claim,main_falsification,action
+1,A,F1_V2_RISK_PARITY,V0,stop geometry with equal initial cash risk,higher stressed risk-adjusted expectancy without worse tail risk,paired epsilon delta disappears after equal-risk sizing,TEST_FIRST
+2,A,F3_V2_X_V3,F1_V2_RISK_PARITY,conditional 45-minute thesis-decay management,time checkpoint preserves V2 edge while reducing exposure and drawdown,no positive interaction or tail benefit under common support,TEST_FACTORIAL
+3,A,F2_V3_TIME_CONDITIONAL,V0,conditional time management only,faster resolution improves exposure efficiency without cutting right tail,missed-winner rate or opportunity cost exceeds registered guardrail,TEST_FACTORIAL
+4,B,S2_RELATIVE_SLATE_S1O,retained Stage A arm,within-cycle lexicographic ranking,better candidate substitution at unchanged risk count and management,selected candidate fails to beat best feasible suppressed candidate,TEST_AFTER_STAGE_A
+5,B,S1_C1_FEATURE_RANK_ONLY,S0_ABSOLUTE_ORDER_CONTROL,C1 measurement used only as rank tie-break,C1 feature contains weak ordering information despite harmful hard gate,no rank monotonicity or positive substitution delta,DIAGNOSTIC
+6,C,C1_TWO_SLOT_50_50,C0_ONE_SLOT_100,second independent half-risk slot,positive stressed slot-two contribution at unchanged total risk,slot two adds turnover drawdown concentration or negative stressed R,CAPACITY_ONLY
+7,D,EXECUTION_TWINS,retained decision policy,decision versus fill versus paper linkage,explain replay-to-paper decay and bound executable edge,twin coverage below 99 percent or unexplained drag changes frontier,MANDATORY_BEFORE_PROMOTION
+8,ALL,V0,none,none,immutable causal baseline,control remains reproducible and decision-complete,hash drift or source support failure,KEEP_CONTROL
+9,ALL,FASTLAB_C1_HARD_GATE,C0,strict rejection gate,none current; prior readable cohort was harmful,positive substitution evidence absent,FREEZE
+10,ALL,V7_RAW_BUDGET2,V0,additional capacity and exposure,none as entry alpha,not risk-equivalent and slot contribution unavailable,REPLACE_WITH_FIXED_RISK_TEST
+11,ALL,V8_V11,existing frozen variants,no descendant until exact rule hashes and support are available,retain diagnostics without multiplying trials,definition or support remains incomplete,KEEP_FROZEN

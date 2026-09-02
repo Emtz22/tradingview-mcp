@@ -1,0 +1,99 @@
+{
+  "schema_version": "h5-pareto-objectives-v2",
+  "status": "RESEARCH_ONLY",
+  "live_trading_allowed": false,
+  "created_at_wib": "2026-09-02T23:00:00+07:00",
+  "cluster_column": "source_cycle_id",
+  "arm_column": "arm_id",
+  "reward_column": "net_r",
+  "stressed_reward_columns": ["net_r_cost_1_5x", "net_r_cost_2x"],
+  "required_columns": [
+    "source_cycle_id", "candidate_id", "arm_id", "decision_ts", "terminal_ts",
+    "accepted", "matured", "net_r", "initial_stop_risk", "feature_hash",
+    "policy_hash", "cost_hash", "execution_hash", "universe_hash"
+  ],
+  "feasibility": {
+    "candidate_coverage_min": 0.99,
+    "policy_decision_coverage_min": 0.99,
+    "terminal_maturity_min": 0.95,
+    "common_support_research_min": 0.95,
+    "common_support_promotion_min": 0.99,
+    "hash_drift_max": 0,
+    "causal_timestamp_required": true,
+    "zero_fill_unresolved_forbidden": true,
+    "risk_parity_required_for_stop_comparison": true,
+    "slot_accounting_required_for_capacity_claim": true
+  },
+  "frontier_required_metrics": [
+    "expectancy_lcb95_r",
+    "stressed_expectancy_1_5x_r",
+    "return_per_stop_risk",
+    "max_drawdown_r",
+    "trade_cvar05_r"
+  ],
+  "objective_directions": {
+    "expectancy_lcb95_r": "max",
+    "stressed_expectancy_1_5x_r": "max",
+    "stressed_expectancy_2x_r": "max",
+    "break_even_cost_multiple": "max",
+    "return_per_stop_risk": "max",
+    "trade_cvar05_r": "min",
+    "max_drawdown_r": "min",
+    "worst_regime_expectancy_r": "max",
+    "leave_one_cluster_out_min_r": "max",
+    "paired_policy_delta_r": "max",
+    "frontier_stability": "max",
+    "active_free_parameters": "min",
+    "storage_bytes_per_cycle": "min"
+  },
+  "epsilon": {
+    "expectancy_lcb95_r": 0.03,
+    "stressed_expectancy_1_5x_r": 0.03,
+    "stressed_expectancy_2x_r": 0.03,
+    "break_even_cost_multiple": 0.10,
+    "return_per_stop_risk": 0.03,
+    "trade_cvar05_r": 0.10,
+    "max_drawdown_r": 0.25,
+    "worst_regime_expectancy_r": 0.05,
+    "leave_one_cluster_out_min_r": 0.05,
+    "paired_policy_delta_r": 0.03,
+    "frontier_stability": 0.05,
+    "active_free_parameters": 1.0,
+    "storage_bytes_per_cycle": 512.0
+  },
+  "bootstrap": {
+    "method": "cluster_resample_with_replacement",
+    "draws_default": 10000,
+    "seed": 20260902,
+    "dominance_probability_min": 0.90,
+    "frontier_stability_promotion_min": 0.70,
+    "confidence_level": 0.95
+  },
+  "missing_outcomes": {
+    "resolved_only_must_be_reported": true,
+    "optimistic_bound_r": 3.0,
+    "pessimistic_bound_r": -1.5,
+    "promotion_uses_pessimistic_below_maturity_gate": true
+  },
+  "cost_grid_round_trip_pct": [0.08, 0.14, 0.22, 0.30],
+  "multiplicity": {
+    "append_only_registry_required": true,
+    "white_reality_check": true,
+    "hansen_spa": true,
+    "model_confidence_set": true,
+    "probability_of_backtest_overfitting_when_supported": true,
+    "deflated_sharpe_when_supported": true
+  },
+  "promotion": {
+    "source_cycles_min": 300,
+    "accepted_terminal_trades_min": 100,
+    "calendar_days_min": 60,
+    "expectancy_lcb95_min": 0.0,
+    "cost_022_total_min": 0.0,
+    "cost_030_total_min": 0.0,
+    "max_symbol_contribution_share": 0.15,
+    "max_month_contribution_share": 0.40,
+    "model_confidence_set_membership_required": true,
+    "direct_parent_material_improvement_required": true
+  }
+}

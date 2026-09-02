@@ -1,0 +1,43 @@
+{
+  "schema": "h5-analysis-status-v1",
+  "overall_status": "PARTIAL_SOURCE_COMPLETE_METHOD",
+  "artifact_status": "BUNDLE_CREATED",
+  "research_only": true,
+  "live_authority": false,
+  "completed": [
+    "evidence-boundary disclosure",
+    "last readable cohort triage",
+    "Pareto metric redesign",
+    "feasibility-before-dominance rules",
+    "epsilon and robust dominance design",
+    "missing-outcome bounds",
+    "equal-risk stop comparison design",
+    "fixed-total-risk capacity design",
+    "selection substitution metrics",
+    "execution-twin decomposition",
+    "multiplicity-control protocol",
+    "four-stage successor registry",
+    "promotion and stopping gates",
+    "standard-library analysis implementation",
+    "unit-test suite",
+    "storage and network efficiency guidance"
+  ],
+  "not_completed": [
+    "file-level extraction of H5_GPT_PRO_HANDOFF_2026-09-02_221545WIB.zip",
+    "independent recomputation of metrics contained only in that archive",
+    "new historical backtest using the latest archive",
+    "new on-time forward observations beyond the supplied evidence",
+    "execution of included code in the failed local runtime"
+  ],
+  "prohibited_inferences": [
+    "Do not assume the 09:22 WIB metrics equal the 22:15 WIB metrics.",
+    "Do not promote V2 from aggregate return before equal-risk validation.",
+    "Do not label V7 entry alpha before fixed-risk slot accounting.",
+    "Do not restore Fastlab C1 as a hard gate before positive substitution value.",
+    "Do not treat catch-up rows as forward evidence.",
+    "Do not zero-fill unresolved outcomes.",
+    "Do not use a weighted scalar score as sole promotion authority."
+  ],
+  "recommended_next_machine_action": "Extract the newest archive, normalize all arm-candidate decisions to RUNME.md, execute CODE/h5_pareto_lab.py, run unit tests, and attach White Reality Check, Hansen SPA and Model Confidence Set outputs before updating the frontier.",
+  "current_decision": "NO_PROMOTION"
+}

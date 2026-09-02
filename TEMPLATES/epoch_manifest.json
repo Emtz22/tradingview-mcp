@@ -1,0 +1,86 @@
+{
+  "schema_version": "h5-forward-epoch-manifest-v2",
+  "epoch_id": "REPLACE_WITH_IMMUTABLE_EPOCH_ID",
+  "status": "DRAFT_TEMPLATE",
+  "research_only": true,
+  "live_trading_allowed": false,
+  "created_at": "REPLACE_WITH_ISO_8601",
+  "timezone": "UTC",
+  "source": {
+    "candidate_stream_name": "REPLACE",
+    "start_ts": "REPLACE",
+    "end_ts_planned": "REPLACE",
+    "point_in_time_universe_hash": "REPLACE",
+    "market_data_manifest_sha256": "REPLACE",
+    "expected_poll_cadence_seconds": 900,
+    "catchup_allowed_for_promotion": false
+  },
+  "contracts": {
+    "feature_hash": "REPLACE",
+    "cost_hash": "REPLACE",
+    "execution_hash": "REPLACE",
+    "risk_hash": "REPLACE",
+    "terminal_outcome_hash": "REPLACE",
+    "same_bar_rule": "STOP_FIRST",
+    "initial_cash_risk_fraction": "REPLACE",
+    "cost_grid_round_trip_pct": [0.08, 0.14, 0.22, 0.30]
+  },
+  "registered_arms": [
+    {
+      "arm_id": "F0_V0_RISK_PARITY_CONTROL",
+      "parent_arm": null,
+      "policy_hash": "REPLACE",
+      "capacity": 1,
+      "risk_share_total": 1.0
+    },
+    {
+      "arm_id": "F1_V2_RISK_PARITY",
+      "parent_arm": "F0_V0_RISK_PARITY_CONTROL",
+      "policy_hash": "REPLACE",
+      "capacity": 1,
+      "risk_share_total": 1.0
+    },
+    {
+      "arm_id": "F2_V3_TIME_CONDITIONAL",
+      "parent_arm": "F0_V0_RISK_PARITY_CONTROL",
+      "policy_hash": "REPLACE",
+      "capacity": 1,
+      "risk_share_total": 1.0
+    },
+    {
+      "arm_id": "F3_V2_X_V3",
+      "parent_arm": "F1_V2_RISK_PARITY",
+      "policy_hash": "REPLACE",
+      "capacity": 1,
+      "risk_share_total": 1.0
+    }
+  ],
+  "interim_looks": [
+    {
+      "look": 1,
+      "matured_clustered_decisions": 30,
+      "one_sided_alpha": 0.005
+    },
+    {
+      "look": 2,
+      "matured_clustered_decisions": 50,
+      "one_sided_alpha": 0.045,
+      "futility_upper_90_bound_r": 0.03
+    }
+  ],
+  "promotion_minimums": {
+    "source_cycles": 300,
+    "accepted_terminal_trades": 100,
+    "calendar_days": 60,
+    "candidate_coverage": 0.99,
+    "policy_decision_coverage": 0.99,
+    "terminal_maturity": 0.95,
+    "execution_twin_match_rate": 0.99
+  },
+  "operator": {
+    "owner": "REPLACE",
+    "frozen_by": "REPLACE",
+    "frozen_at": "REPLACE",
+    "promotion_approval": null
+  }
+}

@@ -1,0 +1,52 @@
+metric_id,family,direction,definition,unit,primary_or_guardrail,minimum_support,notes
+candidate_coverage,evidence,maximize,candidates with a frozen row divided by candidates expected from source cycles,ratio,hard_gate,all source cycles,must be >=0.99
+policy_decision_coverage,evidence,maximize,candidates with an explicit policy decision divided by frozen candidates,ratio,hard_gate,all candidates,must be >=0.99
+terminal_maturity,evidence,maximize,accepted decisions with terminal outcomes divided by accepted decisions due to mature,ratio,hard_gate,all due outcomes,must be >=0.95
+common_support_rate,evidence,maximize,paired candidate IDs observed by both compared arms divided by union support,ratio,hard_gate,paired comparison,must be >=0.95 for research claim and 0.99 for promotion
+ambiguous_lifecycle_rate,evidence,minimize,rows with unresolved ordering fill or same-bar ambiguity not resolved by frozen rule divided by eligible rows,ratio,guardrail,all rows,fail closed
+hash_drift_count,evidence,minimize,distinct unexpected feature policy cost execution universe hashes,count,hard_gate,whole cohort,must be zero except registered epoch change
+stale_catchup_share,evidence,minimize,late-discovered decisions divided by all decisions,ratio,guardrail,all decisions,catch-up never becomes forward
+net_expectancy_r,economics,maximize,mean terminal net R across accepted matured trades,R_per_trade,primary,100 trades,clustered confidence required
+expectancy_lcb95_r,economics,maximize,5th percentile or lower endpoint of cluster-bootstrap mean net R,R_per_trade,primary,30 clusters,must be above zero for promotion
+stressed_expectancy_1_5x_r,economics,maximize,mean net R after 1.5 times registered friction,R_per_trade,primary,100 trades,must remain positive unless parent also negative and arm materially improves risk
+stressed_expectancy_2x_r,economics,maximize,mean net R after twice registered friction,R_per_trade,guardrail,100 trades,target non-negative
+break_even_cost_multiple,economics,maximize,largest multiplier on registered friction with non-negative total net R,multiple,primary,100 trades,compute from gross edge and cost load
+profit_factor,economics,maximize,sum positive net R divided by absolute sum negative net R,ratio,secondary,50 trades,not promotion authority alone
+return_per_stop_risk,economics,maximize,total net R divided by total initial stop risk,R_per_risk_unit,primary,all accepted,makes stop variants risk comparable
+return_per_margin_hour,economics,maximize,total net PnL divided by margin capital hours,currency_per_margin_hour,secondary,all accepted,capacity efficiency
+return_per_exposure_hour,economics,maximize,total net R divided by exposure hours,R_per_hour,secondary,all accepted,time efficiency
+max_drawdown_r,tail,minimize,maximum peak-to-trough loss on causally ordered policy equity curve,R,primary,100 trades,portfolio not bag-of-trades order
+cdar95_r,tail,minimize,mean of worst 5 percent drawdown observations,R,primary,100 trades,conditional drawdown at risk
+trade_cvar05_r,tail,minimize,negative of mean worst 5 percent terminal trade R so larger positive number means worse loss,R,primary,100 trades,tail severity
+max_drawdown_duration_hours,tail,minimize,longest time below prior equity peak,hours,guardrail,60 days,calendar and exposure duration both useful
+gap_through_stop_cvar_r,tail,minimize,mean worst gap-through-stop excess beyond planned risk,R,guardrail,20 stop gaps,requires executable price model
+worst_regime_expectancy_r,robustness,maximize,minimum net expectancy across frozen regimes,R_per_trade,primary,minimum 20 trades per regime,no post-hoc regime labels
+worst_month_expectancy_r,robustness,maximize,minimum monthly net expectancy among months meeting support,R_per_trade,guardrail,minimum 10 trades per month,also report total month contribution
+leave_one_symbol_out_min_r,robustness,maximize,minimum combined expectancy after dropping each symbol,R_per_trade,primary,minimum 5 symbols,detects single-name dependence
+leave_one_cluster_out_min_r,robustness,maximize,minimum combined expectancy after dropping each correlation or event cluster,R_per_trade,primary,minimum 5 clusters,capacity proof
+positive_fold_share,robustness,maximize,walk-forward folds with positive net expectancy divided by supported folds,ratio,secondary,minimum 5 folds,folds chronological
+frontier_stability,robustness,maximize,bootstrap draws where arm is feasible and Pareto non-dominated divided by valid draws,ratio,primary,5000 draws,promotion target >=0.70
+robust_dominance_probability,robustness,maximize,bootstrap probability arm epsilon-dominates direct parent,ratio,primary,5000 draws,target >=0.90 for replacement
+paired_policy_delta_r,selection,maximize,mean per-cycle policy reward difference on exact common support,R_per_cycle,primary,30 clusters,preferred comparison statistic
+selection_substitution_delta_r,selection,maximize,selected candidate R minus best feasible suppressed candidate R,R_per_decision,primary,30 substitutions,measures ranking not abstention
+saved_loss_rate,selection,maximize,control losses correctly rejected and not replaced by worse candidates divided by control losses,ratio,secondary,30 losses,complete reason set required
+missed_winner_rate,selection,minimize,positive feasible control or suppressed outcomes lost by challenger divided by positive feasible outcomes,ratio,primary,30 winners,hard-gate opportunity cost
+refill_net_contribution_r,selection,maximize,total R from lower-ranked replacements after rejections,R,secondary,30 refills,decision-complete slate required
+rank_decile_monotonicity,selection,maximize,Spearman-like monotonic relation between ex-ante rank decile and outcome,correlation,secondary,10 deciles,no outcome-informed rank
+slot2_incremental_stressed_r,capacity,maximize,slot-two policy reward less one-slot control reward at unchanged total risk,R,primary,30 slot-two opportunities,must be positive under stress
+capacity_drawdown_delta_r,capacity,minimize,two-slot max drawdown minus one-slot max drawdown at fixed total risk,R,guardrail,100 trades,negative is improvement
+cluster_duplication_rate,capacity,minimize,two-slot admissions sharing event or correlation cluster divided by two-slot admissions,ratio,hard_gate,all two-slot cycles,target zero unless registered exception
+turnover_per_incremental_r,capacity,minimize,incremental turnover divided by positive incremental net R,notional_per_R,secondary,30 slot-two opportunities,undefined when incremental R <=0
+execution_entry_drag_r,execution,minimize,fill-twin R minus decision-twin R expressed as positive cost drag,R_per_trade,primary,30 fills,negative raw delta converted to positive drag
+execution_management_drag_r,execution,minimize,paper-trade R minus fill-twin R expressed as positive drag,R_per_trade,primary,30 fills,decomposes management mismatch
+execution_twin_match_rate,execution,maximize,on-time accepted setups with all three linked twins divided by on-time accepted setups,ratio,hard_gate,all on-time accepted,target >=0.99
+active_free_parameters,simplicity,minimize,registered tunable numeric and categorical choices count,count,guardrail,whole policy,same inherited fixed parameters counted once
+branch_condition_count,simplicity,minimize,decision branches that can alter admission ranking sizing or exit,count,guardrail,whole policy,complexity tax
+feature_family_count,simplicity,minimize,independent feature domains required by policy,count,guardrail,whole policy,discourage confluence stacking
+storage_bytes_per_cycle,resources,minimize,compressed persisted bytes per complete source cycle,bytes_per_cycle,guardrail,300 cycles,retain decision-grade evidence
+network_bytes_per_cycle,resources,minimize,external network bytes consumed per complete source cycle,bytes_per_cycle,guardrail,300 cycles,measure cache hit rate
+hypervolume_contribution,pareto,maximize,marginal normalized robust-frontier hypervolume contributed by arm,ratio,secondary,5000 bootstrap draws,never promotion authority alone
+model_confidence_set_member,multiplicity,maximize,arm remains in registered Model Confidence Set at alpha,boolean,hard_gate,sufficient clusters,required for promotion
+spa_p_value,multiplicity,minimize,Hansen SPA p-value against immutable control,p_value,secondary,sufficient clusters,interpret with pre-registered alpha
+reality_check_p_value,multiplicity,minimize,White Reality Check p-value for best arm in searched family,p_value,guardrail,sufficient clusters,accounts for data snooping
+pbo_probability,multiplicity,minimize,estimated probability selected in-sample winner underperforms out of sample,ratio,guardrail,minimum 8 chronological partitions,report selection rule

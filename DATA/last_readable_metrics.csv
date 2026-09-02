@@ -1,0 +1,11 @@
+evidence_boundary,book,arm,population_n,decisions_n,accepted_n,wins,losses,standard_value,stressed_value,unit,status,interpretation
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,FASTLAB,C0,,14,8,,,, -2.609,-3.270,R,RESEARCH_ONLY,paired early cohort control
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,FASTLAB,C1,,14,6,,,, -3.575,-4.149,R,FREEZE_HARD_GATE,strict gate accepted less and lost more
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,FASTLAB,C1_MINUS_C0,,14,,,,,-0.966,-0.879,R,NEGATIVE_PAIRED_DELTA,convert feature to rank-only
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,PROSPECTIVE,V0,54,,,,,28.09,22.15,percent,CONTROL,immutable comparison arm
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,PROSPECTIVE,V2,54,,,,,53.65,47.71,percent,PRIMARY_PARENT_PENDING_RISK_PARITY,same count as V0 but equal cash risk not yet established
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,PROSPECTIVE,V7,99,,,,,54.10,43.21,percent,CAPACITY_ONLY,similar raw total with materially more records and weaker stress efficiency
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,CANONICAL_ON_TIME_PAPER,ALL,8,,,2,6,-8.20,-9.08,percent,NEGATIVE_INSUFFICIENT,no promotion authority
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,CANONICAL_ON_TIME_PAPER,V2,4,,,0,4,-5.17,,percent,NEGATIVE_TINY,reconcile through execution twins
+2026-09-02_0922WIB_LAST_INDEPENDENTLY_READABLE,CANONICAL_ON_TIME_PAPER,V3,4,,,2,2,-3.03,,percent,NEGATIVE_TINY,management factor only
+2026-09-02_221545WIB_SUPPLIED_ARCHIVE,LATEST_ARCHIVE,ALL,,,,,,,,,PENDING_ARCHIVE_RECOMPUTE,archive registered but file-level metrics not claimed
