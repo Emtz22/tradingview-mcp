@@ -1,6 +1,12 @@
 name: Temporary H5 Pareto Phase 0
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp_h5_pareto_phase0.yml"
+      - "tools/tmp_h5_phase0.py"
+      - "binder/postBuild"
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
