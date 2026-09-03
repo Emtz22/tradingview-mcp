@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>H5 Worker Probe</title>
+<pre id="status">starting</pre>
+<script>
+(async () => {
+  const topic = 'h5web_93_c6b1a8f4d2e70935';
+  const status = document.getElementById('status');
+  try {
+    const response = await fetch(`https://ntfy.sh/${topic}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain'},
+      body: 'STATUS=WEB_WORKER_READY'
+    });
+    status.textContent = `posted ${response.status}`;
+  } catch (error) {
+    status.textContent = `error ${error}`;
+  }
+})();
+</script>
