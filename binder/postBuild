@@ -2,10 +2,24 @@
 set -euo pipefail
 export H5_DRIVE_FILE_ID="1iDyNtvi9FF8ACMHaNb_bnlkrvW1NVIly"
 export H5_INPUT_NAME="H5_GPT_PRO_HANDOFF_2026-09-03_094836WIB.zip"
-export H5_PHASE0_BIN="h5p93q4w8e2r7t1y6u9i"
+export H5_NOTIFY_TOPIC="h5p93_8f2c1b7d6e4a9c3f0b5d"
+
+notify() {
+  curl --fail --silent --show-error \
+    -H "Title: H5 Pareto Binder" \
+    -d "$1" \
+    "https://ntfy.sh/${H5_NOTIFY_TOPIC}" >/dev/null
+}
+
+trap 'notify "STATUS=FAILED line=${LINENO}" || true' ERR
+notify "STATUS=STARTED"
 python tools/tmp_h5_phase0.py
-curl --fail --silent --show-error \
-  -X POST \
-  -H "Content-Type: application/json" \
-  --data-binary @.tmp-h5-pareto/output/phase0.json \
-  "https://filebin.net/${H5_PHASE0_BIN}/phase0.json"
+
+PHASE0_FILE=".tmp-h5-pareto/output/phase0.json"
+PHASE0_SHA="$(sha256sum "$PHASE0_FILE" | awk '{print $1}')"
+PHASE0_URL="$(curl --fail --silent --show-error -F "file=@${PHASE0_FILE}" https://temp.sh/upload | tr -d '\r\n')"
+case "$PHASE0_URL" in
+  http://*|https://*) ;;
+  *) notify "STATUS=FAILED upload_response=${PHASE0_URL}"; exit 1 ;;
+esac
+notify "STATUS=PHASE0_READY sha256=${PHASE0_SHA} url=${PHASE0_URL}"
