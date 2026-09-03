@@ -1,4 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 export H5_DRIVE_FILE_ID="1iDyNtvi9FF8ACMHaNb_bnlkrvW1NVIly"
+export H5_INPUT_NAME="H5_GPT_PRO_HANDOFF_2026-09-03_094836WIB.zip"
+export H5_PHASE0_BIN="h5p93x7k2m4q8v6z1c9d"
 python tools/tmp_h5_phase0.py
+curl --fail --silent --show-error \
+  -X POST \
+  -H "Content-Type: application/json" \
+  --data-binary @.tmp-h5-pareto/output/phase0.json \
+  "https://filebin.net/${H5_PHASE0_BIN}/phase0.json"
