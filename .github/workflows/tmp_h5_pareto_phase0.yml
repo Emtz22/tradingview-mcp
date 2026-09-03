@@ -1,18 +1,9 @@
 name: Temporary H5 Pareto Phase 0
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/tmp_h5_pareto_phase0.yml"
-      - "tools/tmp_h5_phase0.py"
-      - "binder/postBuild"
-  schedule:
-    - cron: "*/5 * * * *"
+  issues:
+    types: [opened]
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -20,10 +11,11 @@ permissions:
 env:
   H5_DRIVE_FILE_ID: 1iDyNtvi9FF8ACMHaNb_bnlkrvW1NVIly
   H5_INPUT_NAME: H5_GPT_PRO_HANDOFF_2026-09-03_094836WIB.zip
-  H5_RUN_EPOCH: "2026-09-03T10:45:00+07:00"
+  H5_RUN_EPOCH: "2026-09-03T12:00:00+07:00"
 
 jobs:
   inspect:
+    if: startsWith(github.event.issue.title, '[H5-PARETO-RUN]') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
