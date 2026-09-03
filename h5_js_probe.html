@@ -1,6 +1,9 @@
 <!doctype html><meta charset="utf-8"><title>H5 JS Probe</title><body>NOT_EXECUTED<script>
-(async()=>{
- document.body.textContent='JS_EXECUTED_H5_20260903';
- try { await fetch('https://ntfy.sh/h5shot_93_7c4e2a9f1b6d8e03',{method:'POST',mode:'no-cors',body:'JS_EXECUTED_H5_20260903'}); } catch(e) {}
+(()=>{
+ const value='JS_EXECUTED_H5_20260903';
+ document.body.textContent=value;
+ const img=new Image();
+ img.src='https://api.postdata.cloud/dweet/for/h5shot93_7c4e2a9f1b6d8e03?status='+encodeURIComponent(value)+'&nonce='+Date.now();
+ document.body.appendChild(img);
 })();
 </script></body>
