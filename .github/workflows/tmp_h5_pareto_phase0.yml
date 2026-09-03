@@ -19,6 +19,8 @@ permissions:
 
 env:
   H5_DRIVE_FILE_ID: 1iDyNtvi9FF8ACMHaNb_bnlkrvW1NVIly
+  H5_INPUT_NAME: H5_GPT_PRO_HANDOFF_2026-09-03_094836WIB.zip
+  H5_RUN_EPOCH: "2026-09-03T10:45:00+07:00"
 
 jobs:
   inspect:
